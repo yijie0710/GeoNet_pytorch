@@ -39,11 +39,11 @@ def get_flow(in_chnls):
 
 
 class FlowNet(nn.Module):
-    def __init__(self):
+    def __init__(self,input_chnls):
         super(FlowNet, self).__init__()
         # TODO: more inputs should be added
         #encode
-        self.conv1 = downconv(3, 32, kernel_size=7)
+        self.conv1 = downconv(input_chnls, 32, kernel_size=7)
         self.conv2 = downconv(32, 64, kernel_size=5)
         self.conv3 = downconv(64, 128, kernel_size=3)
         self.conv4 = downconv(128, 256, kernel_size=3)

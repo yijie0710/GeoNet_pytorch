@@ -28,6 +28,13 @@ def scale_pyramid(img, num_scales):
     return scaled_imgs
 
 
+def L2_norm(self, x, dim, keep_dims=True):
+    curr_offset = 1e-10
+    l2_norm = torch.norm(torch.abs(x) + curr_offset,
+                         dim=dim, keep_dims=keep_dims)
+    return l2_norm
+
+
 def DSSIM(x, y):
     ''' Official implementation
     def SSIM(self, x, y):
@@ -113,6 +120,7 @@ def compute_multi_scale_intrinsics(intrinsics, num_scales):
 def compute_rigid_flow(pose, depth, intrinsic, reverse_pose):
     # TODO: compute rigid flow
     pass
+
 
 def bilinear_sampler():
     # TODO: bilinear sample

@@ -8,6 +8,7 @@ import FlowNet
 import PoseNet
 from sequence_folders import SequenceFolder
 from utils import *
+from loss_functions import *
 
 
 class GeoNetModel(object):
@@ -19,6 +20,7 @@ class GeoNetModel(object):
         self.batch_size = config['batch_size']
         self.device = device
         self.num_scales = 4
+        self.simi_alpha = config['alpha_image_similarity']
 
         ''' Data preparation
             TODO: transformation
@@ -65,11 +67,12 @@ class GeoNetModel(object):
             src_views = src_views.to(self.device)
             intrinsics = intrinsics.to(self.device)
 
-            ＃　shape: #scale, #batch, # chnls, h,w
-            tgt_view_pyramid = scale_pyramid(tgt_view,self.num_scales)
-            ＃　shape:  #scale, #batch, #num_source,#chnls,h,w
-            tgt_view_tile_pyramid = tgt_view_pyramid.repeat(self.num_source).permute(1,2,0,3,4,5)
-            ＃　shape:  #scale,#batch, #num_source # chnls, h,w
+            #　shape:  #scale, #batch, #chnls, h,w
+            tgt_view_pyramid = scale_pyramid(tgt_view, self.num_scales)
+            #　shape:  #scale, #batch, #num_source, #chnls,h,w
+            tgt_view_tile_pyramid = [tgt_view_pyramid[scale].repeat(self.num_source, 1).transpose(1, 0)
+                                     for scale in range(self.num_scales)]
+            #　shape:  # scale,#batch, #num_source # chnls, h,w
             src_views_pyramid = scale_pyramid(src_views, self.num_scales)
 
             # output multiple disparity prediction
@@ -112,22 +115,53 @@ class GeoNetModel(object):
             for scale in range(self.num_scales):
                 for src in range(self.num_source):
                     fwd_rigid_flow = compute_rigid_flow(
-                        poses[:,src,:], depth[scale, :self.batch_size, :, :], multi_scale_intrinsices[:, scale, :, :], False)
+                        poses[:, src, :], depth[scale, :self.batch_size, :, :], multi_scale_intrinsices[:, scale, :, :], False)
                     bwd_rigid_flow = compute_rigid_flow(
-                        poses[:,src,:], depth[scale, :self.batch_size, :, :], multi_scale_intrinsices[:, scale, :, :], True)
+                        poses[:, src, :], depth[scale, :self.batch_size, :, :], multi_scale_intrinsices[:, scale, :, :], True)
                     if not src:
                         fwd_rigid_flow_cat = fwd_rigid_flow
                         bwd_rigid_flow_cat = bwd_rigid_flow
                     else:
-                        fwd_rigid_flow_cat = torch.cat((fwd_rigid_flow_cat,fwd_rigid_flow),dim=0)
-                        bwd_rigid_flow_cat = torch.cat((bwd_rigid_flow_cat,bwd_rigid_flow),dim=0)
+                        fwd_rigid_flow_cat = torch.cat(
+                            (fwd_rigid_flow_cat, fwd_rigid_flow), dim=0)
+                        bwd_rigid_flow_cat = torch.cat(
+                            (bwd_rigid_flow_cat, bwd_rigid_flow), dim=0)
                 fwd_rigid_flow_pyramid.append(fwd_rigid_flow_cat)
                 bwd_rigid_flow_pyramid.append(bwd_rigid_flow_cat)
+
+            fwd_rigid_warp_pyramid = [
+                flow_warp(src_views_pyramid[scale], fwd_rigid_flow_pyramid[s])
+                for scale in range(self.num_scales)]
+            bwd_rigid_warp_pyramid = [
+                flow_warp(tgt_view_tile_pyramid[s], bwd_rigid_flow_pyramid[s])
+                for scale in range(self.num_scales)]
+
+            fwd_rigid_error_pyramid = [image_similarity(self.simi_alpha, tgt_view_tile_pyramid[s], fwd_rigid_warp_pyramid[s])
+                                       for scale in range(self.num_scales)]
+            bwd_rigid_error_pyramid = [image_similarity(self.simi_alpha, src_views_pyramid[s], bwd_rigid_warp_pyramid[s])
+                                       for scale in range(self.num_scales)]
+
+            # output residual flow
+            # TODO: non residual mode
+            #   make input of the flowNet
+            # cat along the color channels
+            # shapes: #batch, #num_sources, #chnls,h,w
+            fwd_flownet_inputs = torch.cat(
+                (tgt_view_tile_pyramid[0], src_views_pyramid[0],
+                 fwd_rigid_warp_pyramid[0], fwd_rigid_flow_pyramid[0],
+                 L2_norm(fwd_rigid_error_pyramid[0], dim=2)), dim=2)
+            bwd_flownet_inputs = torch.cat(
+                (src_views_pyramid[0], tgt_view_tile_pyramid[0],
+                 bwd_rigid_warp_pyramid[0], bwd_rigid_flow_pyramid[0],
+                 L2_norm(bwd_rigid_error_pyramid[0], dim=2)), dim=2)
+
+            flownet_inputs = torch.cat((fwd_flownet_inputs,
+                                        bwd_flownet_inputs), dim=2)
             
-            fwd_rigid_warp_pyramid = [flow_warp() for scale in range(self.num_scales)]
+            # shape: #batch, #src, 2 (x,y),h,w 
+            resflow = self.flow_net(flownet_inputs)
 
 
-                    # output residual flow
 
     def test(self):
         pass
