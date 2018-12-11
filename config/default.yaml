@@ -4,3 +4,5 @@ num_source: 5
 ckpt_path: test
 batch_size: 4
 data_workers: 6
+data: /home/yijie/data/slam/KITTI
+sequence_length: 3
