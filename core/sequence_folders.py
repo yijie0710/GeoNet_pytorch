@@ -45,24 +45,24 @@ class SequenceFolder(data.Dataset):
             if len(imgs) < sequence_length:
                 continue
             for i in range(demi_length, len(imgs)-demi_length):
-                sample = {'intrinsics': intrinsics, 'tgt': imgs[i], 'ref_imgs': []}
+                sample = {'intrinsics': intrinsics, 'tgt_img': imgs[i], 'src_imgs': []}
                 for j in shifts:
-                    sample['ref_imgs'].append(imgs[i+j])
+                    sample['src_imgs'].append(imgs[i+j])
                 sequence_set.append(sample)
         random.shuffle(sequence_set)
-        self.samples = sequence_set
+        self.samples = sequence_set 
 
     def __getitem__(self, index):
         sample = self.samples[index]
-        tgt_img = load_as_float(sample['tgt'])
-        ref_imgs = [load_as_float(ref_img) for ref_img in sample['ref_imgs']]
+        tgt_img = load_as_float(sample['tgt_img'])
+        src_imgs = [load_as_float(ref_img) for ref_img in sample['src_imgs']]
         if self.transform is not None:
-            imgs, intrinsics = self.transform([tgt_img] + ref_imgs, np.copy(sample['intrinsics']))
+            imgs, intrinsics = self.transform([tgt_img] + src_imgs, np.copy(sample['intrinsics']))
             tgt_img = imgs[0]
-            ref_imgs = imgs[1:]
+            src_imgs = imgs[1:]
         else:
             intrinsics = np.copy(sample['intrinsics'])
-        return tgt_img, ref_imgs, intrinsics, np.linalg.inv(intrinsics)
+        return tgt_img, src_imgs, intrinsics, np.linalg.inv(intrinsics)
 
     def __len__(self):
         return len(self.samples)
