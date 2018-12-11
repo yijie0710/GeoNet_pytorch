@@ -7,6 +7,7 @@ import DispNet
 import FlowNet
 import PoseNet
 from sequence_folders import SequenceFolder
+from utils import *
 
 
 class GeoNetModel(object):
@@ -64,7 +65,16 @@ class GeoNetModel(object):
             src_views = src_views.to(self.device)
             intrinsics = intrinsics.to(self.device)
 
+            ＃　shape: #scale, #batch, # chnls, h,w
+            tgt_view_pyramid = scale_pyramid(tgt_view,self.num_scales)
+            ＃　shape:  #scale, #batch, #num_source,#chnls,h,w
+            tgt_view_tile_pyramid = tgt_view_pyramid.repeat(self.num_source).permute(1,2,0,3,4,5)
+            ＃　shape:  #scale,#batch, #num_source # chnls, h,w
+            src_views_pyramid = scale_pyramid(src_views, self.num_scales)
+
             # output multiple disparity prediction
+            multi_scale_intrinsices = compute_multi_scale_intrinsics(
+                intrinsics, self.num_scales)
 
             #   make the input of the disparity prediction
             #       shape: batch,chnls,h,w
@@ -93,6 +103,7 @@ class GeoNetModel(object):
             poses = self.pose_net(posenet_inputs)
 
             # output rigid flow
+
             # NOTE: this should be a python list,
             # since the sizes of different level of the pyramid are not same
             fwd_rigid_flow_pyramid = []
@@ -100,7 +111,21 @@ class GeoNetModel(object):
 
             for scale in range(self.num_scales):
                 for src in range(self.num_source):
-                    fwd_rigid_flow = compute_rigid_flow()
+                    fwd_rigid_flow = compute_rigid_flow(
+                        poses[:,src,:], depth[scale, :self.batch_size, :, :], multi_scale_intrinsices[:, scale, :, :], False)
+                    bwd_rigid_flow = compute_rigid_flow(
+                        poses[:,src,:], depth[scale, :self.batch_size, :, :], multi_scale_intrinsices[:, scale, :, :], True)
+                    if not src:
+                        fwd_rigid_flow_cat = fwd_rigid_flow
+                        bwd_rigid_flow_cat = bwd_rigid_flow
+                    else:
+                        fwd_rigid_flow_cat = torch.cat((fwd_rigid_flow_cat,fwd_rigid_flow),dim=0)
+                        bwd_rigid_flow_cat = torch.cat((bwd_rigid_flow_cat,bwd_rigid_flow),dim=0)
+                fwd_rigid_flow_pyramid.append(fwd_rigid_flow_cat)
+                bwd_rigid_flow_pyramid.append(bwd_rigid_flow_cat)
+            
+            fwd_rigid_warp_pyramid = [flow_warp() for scale in range(self.num_scales)]
+
 
                     # output residual flow
 
