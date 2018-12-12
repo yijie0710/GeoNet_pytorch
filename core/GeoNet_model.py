@@ -57,8 +57,9 @@ class GeoNetModel(object):
 
             optim_params = [{'params': v.parameters(), 'lr': config['learning_rate']}
                             for v in self.nets.values()]
-            optimizer = torch.optim.Adam(optim_params, betas=(
-                config['momentum'], config['beta']))
+            self.optimizer = torch.optim.Adam(optim_params, betas=(
+                config['momentum'], config['beta']),
+                weight_decay=config['weight_decay'])
 
     def train(self):
         for i, sample_batched in enumerate(self.data_loader):
@@ -325,10 +326,10 @@ class GeoNetModel(object):
             bwd_consist_bound_pyramid = [torch.max(s, self.geometric_consistency_alpha).clone().detach()
                                          for s in bwd_consist_bound_pyramid]
 
-            fwd_mask = [torch.less(fwd_flow_diff_pyramid[s]*2**s, fwd_consist_bound_pyramid[s]).type(torch.FloatTensor)
-                        for s in range(self.num_scales)]
-            bwd_mask = [torch.less(bwd_flow_diff_pyramid[s]*2**s, bwd_consist_bound_pyramid[s]).type(torch.FloatTensor)
-                        for s in range(self.num_scales)]
+            fwd_mask_pyramid = [torch.less(fwd_flow_diff_pyramid[s]*2**s, fwd_consist_bound_pyramid[s]).type(torch.FloatTensor)
+                                for s in range(self.num_scales)]
+            bwd_mask_pyramid = [torch.less(bwd_flow_diff_pyramid[s]*2**s, bwd_consist_bound_pyramid[s]).type(torch.FloatTensor)
+                                for s in range(self.num_scales)]
 
             # NOTE: loss
             loss_rigid_warp = 0
@@ -357,8 +358,16 @@ class GeoNetModel(object):
                         flow_smooth_loss(bwd_full_flow_pyramid[s], src_views_pyramid[s]))
 
                 loss_geometric_consistency += self.loss_weight_geometrical_consistency/2*(
-                    +torch.sum(torch.mean(fwd_,dim=1,True))/torch.mean()
-                    + torch.sum()/torch.mean())
+                    +torch.sum(torch.mean(fwd_flow_diff_pyramid[s], 1, True)*fwd_mask_pyramid[s])
+                    / torch.mean(fwd_mask_pyramid[s])
+                    + torch.sum(torch.mean(bwd_flow_diff_pyramid[s], 1, True)*bwd_mask_pyramid[s])
+                    / torch.mean(bwd_mask_pyramid[s]))
+
+            loss_total = loss_rigid_warp+loss_disp_smooth+loss_full_warp+loss_full_smooth+loss_geometric_consistency
+            
+            self.optimizer.zero_grad()
+            loss_total.backward()
+            loss_total.step()
 
     def test(self):
         pass
