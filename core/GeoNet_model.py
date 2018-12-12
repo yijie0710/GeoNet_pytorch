@@ -10,6 +10,8 @@ from sequence_folders import SequenceFolder
 from loss_functions import *
 from utils import *
 from logger import *
+import time
+import csv
 
 n_iter = 0
 
@@ -30,6 +32,10 @@ class GeoNetModel(object):
         self.loss_weight_full_warp = config['lambda_fw']
         self.loss_weigtht_full_smooth = config['lambda_fs']
         self.loss_weight_geometrical_consistency = config['lambda_gc']
+        self.epochs = config['epochs']
+        self.epoch_size = config['epoch_size']
+        self.log = '{}/log_{}'.format(config['log_dir'], time.time())
+        self.output_log_freq = self.config['output_log_freq']
 
         ''' Data preparation
             TODO: transformation
@@ -47,8 +53,38 @@ class GeoNetModel(object):
         self.nets = {'disp': self.disp_net,
                      'pose': self.pose_net,
                      'flow': self.flow_net}
-        self.train_logger = TermLogger(n_epochs=args.epochs, train_size=min(
-            len(train_loader), args.epoch_size), valid_size=len(val_loader))
+
+    def iter_data_preparation(self, sampled_batch):
+        # shape: batch,chnls h,w
+        tgt_view = sampled_batch['tgt_img']
+        # shape: batch,num_source,chnls,h,w
+        src_views = sampled_batch['src_imgs']
+        # shape: batch,3,3
+        intrinsics = sampled_batch['intrinsics']
+
+        # to device
+        # shape: #batch,3,h,w
+        self.tgt_view = tgt_view.to(self.device)
+        self.src_views = src_views.to(self.device)
+        self.intrinsics = intrinsics.to(self.device)
+        # Assumme src_views is stack and the shapes is #batch,#3*#src_views,h,w
+        # shape: #batch*#src_views,3,h,w
+        self.src_views_concat = torch.cat([src_views[:, 3*s:3*(s+1), :, :]
+                                           for s in range(self.num_source)], dim=0)
+
+        #　shape:  #scale, #batch, #chnls, h,w
+        self.tgt_view_pyramid = scale_pyramid(tgt_view, self.num_scales)
+        #　shape:  #scale, #batch*#src_views, #chnls,h,w
+        self.tgt_view_tile_pyramid = [self.tgt_view_pyramid[scale].repeat(self.num_source, 1, 1, 1)
+                                      for scale in range(self.num_scales)]
+
+        #　shape:  # scale,#batch*#src_views, # chnls, h,w
+        self.src_views_pyramid = scale_pyramid(self.src_views_concat,
+                                               self.num_scales)
+
+        # output multiple disparity prediction
+        self.multi_scale_intrinsices = compute_multi_scale_intrinsics(
+            intrinsics, self.num_scales)
 
     def build_dispnet(self):
         #       shape: batch,chnls,h,w
@@ -187,39 +223,84 @@ class GeoNetModel(object):
                             for s in range(self.num_scales)]
 
         # NOTE: loss
-        loss_rigid_warp = 0
-        loss_disp_smooth = 0
-        loss_full_warp = 0
-        loss_full_smooth = 0
-        loss_geometric_consistency = 0
+        self.loss_rigid_warp = 0
+        self.loss_disp_smooth = 0
+        self.loss_full_warp = 0
+        self.loss_full_smooth = 0
+        self.loss_geometric_consistency = 0
 
         for scale in range(self.num_scales):
-            loss_rigid_warp += self.loss_weight_rigid_warp *\
+            self.loss_rigid_warp += self.loss_weight_rigid_warp *\
                 self.num_source/2*(
                     torch.mean(self.fwd_rigid_error_pyramid[s]) +
                     torch.mean(self.bwd_rigid_error_pyramid[s]))
 
-            loss_disp_smooth += self.loss_weight_disparity_smooth/2**s *\
+            self.loss_disp_smooth += self.loss_weight_disparity_smooth/2**s *\
                 smooth_loss(self.disparities[s], torch.cat(
                     (self.tgt_view_pyramid[s], self.src_views_pyramid[s]), dim=0))
 
-            loss_full_warp += self.loss_weight_full_warp*self.num_source/2 * \
+            self.loss_full_warp += self.loss_weight_full_warp*self.num_source/2 * \
                 (torch.mean(
                     self.fwd_full_error_pyramid[s])+torch.mean(self.bwd_full_error_pyramid[s]))
 
-            loss_full_smooth += self.loss_weigtht_full_smooth/2**(s+1) *\
+            self.loss_full_smooth += self.loss_weigtht_full_smooth/2**(s+1) *\
                 (flow_smooth_loss(
                     self.fwd_full_flow_pyramid[s], self.tgt_view_tile_pyramid[s]) +
                     flow_smooth_loss(self.bwd_full_flow_pyramid[s], self.src_views_pyramid[s]))
 
-            loss_geometric_consistency += self.loss_weight_geometrical_consistency/2*(
+            self.loss_geometric_consistency += self.loss_weight_geometrical_consistency/2*(
                 +torch.sum(torch.mean(fwd_flow_diff_pyramid[s], 1, True)*fwd_mask_pyramid[s])
                 / torch.mean(fwd_mask_pyramid[s])
                 + torch.sum(torch.mean(bwd_flow_diff_pyramid[s], 1, True)*bwd_mask_pyramid[s])
                 / torch.mean(bwd_mask_pyramid[s]))
 
-        self.loss_total = loss_rigid_warp+loss_disp_smooth + \
-            loss_full_warp+loss_full_smooth+loss_geometric_consistency
+        self.loss_total = self.loss_rigid_warp+self.loss_disp_smooth + \
+            self.loss_full_warp+self.loss_full_smooth+self.loss_geometric_consistency
+
+    def training_inside_epoch(self):
+        global n_iter
+
+        batch_time = AverageMeter()
+        data_time = AverageMeter()
+        losses = AverageMeter(precision=4)
+
+        end = time.time()
+
+        for i, sampled_batch in enumerate(self.train_loader):
+            data_time.update(time.time()-end)
+            self.iter_data_preparation(sampled_batch)
+
+            self.build_dispnet()
+            self.build_posenet()
+            self.build_rigid_warp_flow()
+            self.build_flownet()
+            self.build_full_warp_flow()
+            self.build_losses()
+
+            self.optimizer.zero_grad()
+            self.loss_total.backward()
+            self.loss_total.step()
+            
+            #  log
+            n_iter += 1
+            losses.update(self.loss_total.item(), self.batch_size)
+            batch_time.update(time.time()-end)
+            end = time.time()
+
+            #  write
+            with open(self.log, 'a') as csvfile:
+                writer = csv.writer(csvfile, delimiter='\t')
+                writer.writerow([self.loss_total.item(), self.loss_rigid_warp.item(),
+                                 self.loss_disp_smooth.item(), self.loss_full_warp.item(),
+                                 self.loss_full_smooth.item(), self.loss_geometric_consistency.item()])
+            self.train_logger.train_bar.update(i+1)
+            if i % self.output_log_freq == 0:
+                self.train_logger.train_writer.write(
+                    'Train: Time {} Data {} Loss {}'.format(batch_time, data_time, losses))
+            if i >= self.epoch_size - 1:
+                break
+
+        return losses.avg[0]  # TODO: why not torch.mean(losses.avg) ?
 
     def train(self):
         global n_iter
@@ -236,10 +317,6 @@ class GeoNetModel(object):
             self.train_set, shuffle=True,
             num_workers=self.config['num_workers'], batch_size=self.config['batch_size'], pin_memory=True)
 
-        self.train_logger = TermLogger(n_epochs=self.config['epoch'], train_size=min(
-            len(self.train_loader), self.config['epoch_size']), valid_size=0)
-        self.train_logger.epoch_bar.start()
-
         optim_params = [{'params': v.parameters(), 'lr': self.config['learning_rate']}
                         for v in self.nets.values()]
 
@@ -247,49 +324,16 @@ class GeoNetModel(object):
             self.config['momentum'], self.config['beta']),
             weight_decay=self.config['weight_decay'])
 
-        for i, sample_batched in enumerate(self.train_loader):
-            # shape: batch,chnls h,w
-            tgt_view = sample_batched['tgt_img']
-            # shape: batch,num_source,chnls,h,w
-            src_views = sample_batched['src_imgs']
-            # shape: batch,3,3
-            intrinsics = sample_batched['intrinsics']
+        self.train_logger = TermLogger(n_epochs=self.config['epoch'], train_size=min(
+            len(self.train_loader), self.config['epoch_size']), valid_size=0)
+        self.train_logger.epoch_bar.start()
 
-            # to device
-            # shape: #batch,3,h,w
-            self.tgt_view = tgt_view.to(self.device)
-            self.src_views = src_views.to(self.device)
-            self.intrinsics = intrinsics.to(self.device)
-            # Assumme src_views is stack and the shapes is #batch,#3*#src_views,h,w
-            # shape: #batch*#src_views,3,h,w
-            self.src_views_concat = torch.cat([src_views[:, 3*s:3*(s+1), :, :]
-                                          for s in range(self.num_source)], dim=0)
-
-            #　shape:  #scale, #batch, #chnls, h,w
-            self.tgt_view_pyramid = scale_pyramid(tgt_view, self.num_scales)
-            #　shape:  #scale, #batch*#src_views, #chnls,h,w
-            self.tgt_view_tile_pyramid = [self.tgt_view_pyramid[scale].repeat(self.num_source, 1, 1, 1)
-                                     for scale in range(self.num_scales)]
-
-            #　shape:  # scale,#batch*#src_views, # chnls, h,w
-            self.src_views_pyramid = scale_pyramid(src_views_concat,
-                                              self.num_scales)
-
-            # output multiple disparity prediction
-            self.multi_scale_intrinsices = compute_multi_scale_intrinsics(
-                intrinsics, self.num_scales)
-
-            self.build_dispnet()
-            self.build_posenet()
-            self.build_rigid_warp_flow()
-            self.build_flownet()
-            self.build_full_warp_flow()
-            self.build_losses()
-
-            self.optimizer.zero_grad()
-            self.loss_total.backward()
-            self.loss_total.step()
-            n_iter += 1
+        for epoch in range(self.epochs):
+            self.train_logger.epoch_bar.update(epoch)
+            self.train_logger.reset_train_bar()
+            epoch_loss = self.training_inside_epoch()
+            self.train_logger.train_writer().write(
+                ' * Avg Loss : {:.3f}'.format(epoch_loss))
 
     def test(self):
         pass

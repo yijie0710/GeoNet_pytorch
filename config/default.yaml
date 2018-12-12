@@ -1,6 +1,6 @@
 num_source: 2
 ckpt_path: test
-ckpt_dir: 
+
 
 data_workers: 6
 data: /home/yijie/data/slam/KITTI
@@ -9,11 +9,14 @@ img_height:
 img_width:
 
 # Training
+ckpt_dir: 
+log_dir: 
 learning_rate:
 iter: 10000
 cuda: False
 batch_size: 4
 save_ckpt_freq:
+output_log_freq:
 alpha_recon_image:
 dispnet_encoder: 'VGG-16'
 disparity_scale_normalize: False
