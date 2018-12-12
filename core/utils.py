@@ -117,21 +117,6 @@ def compute_multi_scale_intrinsics(intrinsics, num_scales):
     return multi_scale_intrinsices
 
 
-def compute_rigid_flow(pose, depth, intrinsic, reverse_pose):
-    # TODO: compute rigid flow
-    pass
-
-
-def bilinear_sampler():
-    # TODO: bilinear sample
-    pass
-
-
-def flow_warp():
-    # TODO: flow warp
-    pass
-
-
 def euler2mat(z, y, x):
     # TODO: eular2mat
     pass
@@ -152,6 +137,33 @@ def cam2pixel(cam_coords, intrinsics):
     pass
 
 
-def meshgrid():
+def meshgrid(batch, height, width, is_homogeneous=True):
     # TODO: meshgrid
+    x = torch.ones(height).type(torch.FloatTensor).view(
+        height, 1)*torch.linsapce(0, 1, width).view(1, width)
+    y = torch.linspace(0, 1, height).view(height, 1) * \
+        torch.ones(width).type(torch.FloatTensor).view(1, width)
+    x = x*(width-1)
+    y = y*(height-1)
+    if is_homogeneous:
+        ones = torch.ones(height, width)
+        coords = torch.stack((x, y, ones), dim=0)  # shape: 3,h,w
+    else:
+        coords = torch.stack((x, y), dim=0)  # shape: 2,h,w
+    coords = torch.repeat(batch, 1, 1, 1)
+    return coords
+
+
+def bilinear_sampler():
+    # TODO: bilinear sample
+    pass
+
+
+def compute_rigid_flow(pose, depth, intrinsic, reverse_pose):
+    # TODO: compute rigid flow
+    pass
+
+
+def flow_warp(img, flow):
+    # TODO: flow warp
     pass
