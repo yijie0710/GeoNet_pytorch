@@ -137,26 +137,22 @@ def cam2pixel(cam_coords, intrinsics):
     pass
 
 
-def meshgrid(batch, height, width, is_homogeneous=True):
-    # TODO: meshgrid
-    x = torch.ones(height).type(torch.FloatTensor).view(
-        height, 1)*torch.linsapce(0, 1, width).view(1, width)
-    y = torch.linspace(0, 1, height).view(height, 1) * \
-        torch.ones(width).type(torch.FloatTensor).view(1, width)
-    x = x*(width-1)
-    y = y*(height-1)
-    if is_homogeneous:
-        ones = torch.ones(height, width)
-        coords = torch.stack((x, y, ones), dim=0)  # shape: 3,h,w
-    else:
-        coords = torch.stack((x, y), dim=0)  # shape: 2,h,w
-    coords = torch.repeat(batch, 1, 1, 1)
-    return coords
-
-
-def bilinear_sampler():
-    # TODO: bilinear sample
-    pass
+# def meshgrid(batch, height, width, is_homogeneous=True):
+#     # TODO: meshgrid
+#     x = torch.ones(height).type(torch.FloatTensor).view(
+#         height, 1)*torch.linsapce(0, 1, width).view(1, width)
+#     y = torch.linspace(0, 1, height).view(height, 1) * \
+#         torch.ones(width).type(torch.FloatTensor).view(1, width)
+#     x = x*(width-1)
+#     y = y*(height-1)
+#     if is_homogeneous:
+#         ones = torch.ones(height, width)
+#         coords = torch.stack((x, y, ones), dim=0)  # shape: 3,h,w
+#     else:
+#         coords = torch.stack((x, y), dim=0)  # shape: 2,h,w
+#     coords = torch.repeat(batch, 1, 1, 1)
+#     # shape: #batch, 2 or 3, h, w
+#     return coords
 
 
 def compute_rigid_flow(pose, depth, intrinsic, reverse_pose):
@@ -164,6 +160,8 @@ def compute_rigid_flow(pose, depth, intrinsic, reverse_pose):
     pass
 
 
-def flow_warp(img, flow):
+def flow_warp(src_img, src2tgt_flow):
     # TODO: flow warp
-    pass
+    flow_field = src2tgt_flow.clone().permute(0,2,3,1)
+    tgt_img = F.grid_sample(src_img,flow_field)
+    return tgt_img
