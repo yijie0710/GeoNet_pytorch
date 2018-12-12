@@ -27,6 +27,3 @@ def flow_smooth_loss(flow,img):
         smoothness += smooth_loss(flow[:, i, :, :].unsqueeze(-1), img)
     return smoothness/2
 
-def geometry_consistency_loss():
-    # TODO: implementation with the output of the network
-    pass

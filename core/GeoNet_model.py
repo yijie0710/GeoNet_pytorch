@@ -7,15 +7,14 @@ import DispNet
 import FlowNet
 import PoseNet
 from sequence_folders import SequenceFolder
-from utils import *
 from loss_functions import *
-
+from utils import *
+import logger
 
 class GeoNetModel(object):
 
-    def __init__(self, mode, config, device):
+    def __init__(self, config, device):
         self.config = config
-        self.mode = mode
         self.num_source = config['num_source']
         self.batch_size = config['batch_size']
         self.device = device
@@ -32,37 +31,44 @@ class GeoNetModel(object):
         ''' Data preparation
             TODO: transformation
         '''
-        data_transform = None
-        self.dataset = SequenceFolder(
-            config['data'],
-            transform=data_transform,
-            train=self.mode == 'train',
-            seed=self.config['seed'],
-            sequence_length=self.config['sequence_length']
-        )
+        self.data_transform = None
+        
 
         '''Nets preparation
         '''
         self.disp_net = DispNet.DispNet()
         self.pose_net = PoseNet.PoseNet(config['num_source'])
-        self.flow_net = FlowNet.FlowNet()
+        '''input channels:
+            #src_views * (3 tgt_rgb + 3 src_rgb + 3 warp_rgb + 2 flow_xy +1 error )
+        '''
+        self.flow_net = FlowNet.FlowNet(12*self.num_source)
         self.nets = {'disp': self.disp_net,
                      'pose': self.pose_net,
                      'flow': self.flow_net}
-        self.data_loader = torch.utils.data.DataLoader(
-            self.dataset, shuffle=True,
-            num_workers=config['num_workers'], batch_size=config['batch_size'])
-
-        if mode == 'train':
-
-            optim_params = [{'params': v.parameters(), 'lr': config['learning_rate']}
-                            for v in self.nets.values()]
-            self.optimizer = torch.optim.Adam(optim_params, betas=(
-                config['momentum'], config['beta']),
-                weight_decay=config['weight_decay'])
+        
 
     def train(self):
-        for i, sample_batched in enumerate(self.data_loader):
+
+        self.train_set = SequenceFolder(
+            self.config['data'],
+            transform=self.data_transform,
+            train=True,
+            seed=self.config['seed'],
+            sequence_length=self.config['sequence_length']
+        )
+        
+        self.train_loader = torch.utils.data.DataLoader(
+            self.train_set, shuffle=True,
+            num_workers=self.config['num_workers'], batch_size=self.config['batch_size'], pin_memory=True)
+
+        optim_params = [{'params': v.parameters(), 'lr': self.config['learning_rate']}
+                        for v in self.nets.values()]
+
+        self.optimizer = torch.optim.Adam(optim_params, betas=(
+            self.config['momentum'], self.config['beta']),
+            weight_decay=self.config['weight_decay'])
+
+        for i, sample_batched in enumerate(self.train_loader):
             # shape: batch,chnls h,w
             tgt_view = sample_batched['tgt_img']
             # shape: batch,num_source,chnls,h,w
@@ -174,7 +180,7 @@ class GeoNetModel(object):
             flownet_inputs = torch.cat((fwd_flownet_inputs,
                                         bwd_flownet_inputs), dim=0)
 
-            # shape: #batch, #src, 2,h,w
+            # shape: (#batch*2, (3+3+3+2+1)*#src_views, h,w)
             resflow = self.flow_net(flownet_inputs)
 
             # unnormalize the pyramid flow back to pixel metric
@@ -363,8 +369,9 @@ class GeoNetModel(object):
                     + torch.sum(torch.mean(bwd_flow_diff_pyramid[s], 1, True)*bwd_mask_pyramid[s])
                     / torch.mean(bwd_mask_pyramid[s]))
 
-            loss_total = loss_rigid_warp+loss_disp_smooth+loss_full_warp+loss_full_smooth+loss_geometric_consistency
-            
+            loss_total = loss_rigid_warp+loss_disp_smooth + \
+                loss_full_warp+loss_full_smooth+loss_geometric_consistency
+
             self.optimizer.zero_grad()
             loss_total.backward()
             loss_total.step()

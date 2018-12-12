@@ -1,8 +1,30 @@
-iter: 10000
-cuda: False
-num_source: 5
+num_source: 2
 ckpt_path: test
-batch_size: 4
+ckpt_dir: 
+
 data_workers: 6
 data: /home/yijie/data/slam/KITTI
 sequence_length: 3
+img_height:
+img_width:
+
+# Training
+learning_rate:
+iter: 10000
+cuda: False
+batch_size: 4
+save_ckpt_freq:
+alpha_recon_image:
+dispnet_encoder: 'VGG-16'
+disparity_scale_normalize: False
+
+lambda_rw:
+lambda_ds:
+lambda_fw:
+lambda_fs:
+lambda_gc:
+geometric_consistency_alpha:
+geometric_consistency_beta:
+
+# Inference
+result_dir:
