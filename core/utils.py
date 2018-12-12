@@ -1,8 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
-
-# TODO: why we need non homogeneous?
+import math
 
 
 def resize_2d(img, size):
@@ -119,49 +118,134 @@ def compute_multi_scale_intrinsics(intrinsics, num_scales):
 
 def euler2mat(z, y, x):
     # TODO: eular2mat
-    pass
+    '''
+    input shapes of z,y,x all are: (#batch)
+    '''
+    batch_size = z.shape[0]
+
+    _z = z.clone().clamp(-math.pi, math.pi)
+    _y = y.clone().clamp(-math.pi, math.pi)
+    _x = x.clone().clamp(-math.pi, math.pi)
+
+    ones = torch.ones(batch_size).type(torch.FloatTensor)
+    zeros = torch.zeros(batch_size).type(torch.FloatTensor)
+
+    cosz = torch.cos(z)
+    sinz = torch.sin(z)
+    # shape: (#batch,3)
+    rotz_mat_r1 = torch.stack((cosz, -sinz, zeros), dim=1)
+    rotz_mat_r2 = torch.stack((sinz, cosz, zeros), dim=1)
+    rotz_mat_r3 = torch.stack((zeros, zeros, ones), dim=1)
+    # shape: (#batch,3,3)
+    rotz_mat = torch.stack((rotz_mat_r1, rotz_mat_r2, rotz_mat_r3), dim=1)
+
+    cosy = torch.cos(y)
+    siny = torch.sin(y)
+    roty_mat_r1 = torch.stack((cosy, zeros, siny), dim=1)
+    roty_mat_r2 = torch.stack((zeros, ones, zeros), dim=1)
+    roty_mat_r3 = torch.stack((-siny, zeros, cosy), dim=1)
+    roty_mat = torch.stack((roty_mat_r1, roty_mat_r2, roty_mat_r3), dim=1)
+
+    cosx = torch.cos(x)
+    sinx = torch.sin(x)
+    rotx_mat_r1 = torch.stack((ones, zeros, zeros), dim=1)
+    rotx_mat_r2 = torch.stack((zeros, cosx, -sinx), dim=1)
+    rotx_mat_r3 = torch.stack((zeros, sinx, cosx), dim=1)
+    rotx_mat = torch.stack((rotx_mat_r1, rotx_mat_r2, rotx_mat_r3), dim=1)
+
+    # shape: (#batch,3,3)
+    rot_mat = torch.matmul(rotz_mat, torch.matmul(roty_mat, rotx_mat))
+
+    return rot_mat
 
 
 def pose_vec2mat(vec):
     # TODO:pose vec 2 mat
-    pass
+    # input shape of vec: (#batch, 6)
+    # shape: (#batch,3)
+    translate_vec = vec[:, :3]
+    rot_x = vec[:, 3]
+    rot_y = vec[:, 4]
+    rot_z = vec[:, 5]
+
+    # shape: (#batch,3,3)
+    rotation_mat = euler2mat(rot_z, rot_y, rot_x)
+
+    # shape: (#batch,3,4)
+    transform_mat = torch.cat((rotation_mat, translate_vec), dim=2)
+    batch_size = vec.shape[0]
+    # shape: (#batch,1,4)
+    fill = torch.tensor([0, 0, 0, 1]).type(
+        torch.FloatTensor).view(1, 4).repeat(batch_size, 1, 1)
+    # shape: (#batch,4,4)
+    transform_mat = torch.cat((transform_mat, fill), dim=1)
+    return transform_mat
 
 
-def pixel2cam(pixel_coords, depth, intrinsics):
-    # TODO: pixel2cam
-    pass
+
+def meshgrid(batch, height, width, is_homogeneous=True):
+    # TODO: meshgrid
+    x = torch.ones(height).type(torch.FloatTensor).view(
+        height, 1)*torch.linsapce(0, 1, width).view(1, width)
+    y = torch.linspace(0, 1, height).view(height, 1) * \
+        torch.ones(width).type(torch.FloatTensor).view(1, width)
+    x = x*(width-1)
+    y = y*(height-1)
+    if is_homogeneous:
+        ones = torch.ones(height, width)
+        coords = torch.stack((x, y, ones), dim=0)  # shape: 3,h,w
+    else:
+        coords = torch.stack((x, y), dim=0)  # shape: 2,h,w
+    coords = torch.repeat(batch, 1, 1, 1)
+    # shape: #batch, 2 or 3, h, w
+    return coords
 
 
-def cam2pixel(cam_coords, intrinsics):
-    # TODO: cam2pixel
-    pass
-
-
-# def meshgrid(batch, height, width, is_homogeneous=True):
-#     # TODO: meshgrid
-#     x = torch.ones(height).type(torch.FloatTensor).view(
-#         height, 1)*torch.linsapce(0, 1, width).view(1, width)
-#     y = torch.linspace(0, 1, height).view(height, 1) * \
-#         torch.ones(width).type(torch.FloatTensor).view(1, width)
-#     x = x*(width-1)
-#     y = y*(height-1)
-#     if is_homogeneous:
-#         ones = torch.ones(height, width)
-#         coords = torch.stack((x, y, ones), dim=0)  # shape: 3,h,w
-#     else:
-#         coords = torch.stack((x, y), dim=0)  # shape: 2,h,w
-#     coords = torch.repeat(batch, 1, 1, 1)
-#     # shape: #batch, 2 or 3, h, w
-#     return coords
-
-
-def compute_rigid_flow(pose, depth, intrinsic, reverse_pose):
+def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
     # TODO: compute rigid flow
-    pass
+    '''Compute the rigid flow from src view to tgt view 
+
+        input shapes:
+            pose: #batch,6
+            depth: #batch,h,w
+            intrinsics: #batch,3,3
+    '''
+    batch_size, h, w = depth.shape
+
+    pose_mat = pose_vec2mat(pose)
+    if reverse_pose:
+        pose_mat = torch.inverse(pose_mat)
+
+    intrinsics_inv = torch.inverse(intrinsics)
+
+    # shape: (#batch*h*w,3)
+    src_coords = meshgrid(batch_size, h, w, True).permute(
+        0, 2, 3, 1).view(batch_size*h*w, 3)
+    # shape: (#batch*h*w,3)
+    _depth = depth.clone().view(batch_size*h*w).repeat(3, 1).transpose(1, 0)
+    # shape: (#batch*h*w,3)
+    tgt_coords = _depth*torch.matmul(intrinsics_inv, src_coords)
+
+    ones = torch.ones(batch_size).type(torch.FloatTensor).view(batch_size, 1)
+    # shape: (#batch*h*w,4)
+    tgt_coords = torch.cat((tgt_coords, ones), dim=1)
+
+    # shape: (#batch*h*w,3)
+    tgt_coords = torch.matmul(pose_mat, tgt_coords)[:, :3]
+
+    # shape: (#batch*h*w,3)
+    tgt_coords = torch.matmul(intrinsics, tgt_coords)
+
+    # shape: (#batch*h*w,3)
+    rigid_flow = tgt_coords-src_coords
+    # shape: (#batch,2,h,w)
+    rigid_flow = rigid_flow[:, :2].view(
+        batch_size, h, w, 2).permute(batch_size, 2, h, w)
+    return rigid_flow
 
 
 def flow_warp(src_img, src2tgt_flow):
     # TODO: flow warp
-    flow_field = src2tgt_flow.clone().permute(0,2,3,1)
-    tgt_img = F.grid_sample(src_img,flow_field)
+    flow_field = src2tgt_flow.clone().permute(0, 2, 3, 1)
+    tgt_img = F.grid_sample(src_img, flow_field)
     return tgt_img
