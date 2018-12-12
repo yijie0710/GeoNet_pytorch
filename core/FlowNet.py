@@ -131,5 +131,5 @@ class FlowNet(nn.Module):
             return out_flow1
 
 ###################Test###################
-net = FlowNet()
+net = FlowNet(3)
 print(net)

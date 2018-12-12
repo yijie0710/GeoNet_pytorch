@@ -10,3 +10,11 @@ runs/Dec12_17-58-53_yijie-Lenovo-Y700P-14/events.out.tfevents.1544608733.yijie-L
 runs/Dec12_17-58-53_yijie-Lenovo-Y700P-14/data/scalar_group/arctanx/events.out.tfevents.1544608733.yijie-Lenovo-Y700P-14
 runs/Dec12_17-58-53_yijie-Lenovo-Y700P-14/data/scalar_group/xcosx/events.out.tfevents.1544608733.yijie-Lenovo-Y700P-14
 runs/Dec12_17-58-53_yijie-Lenovo-Y700P-14/data/scalar_group/xsinx/events.out.tfevents.1544608733.yijie-Lenovo-Y700P-14
+core/__pycache__/utils.cpython-35.pyc
+core/__pycache__/DispNet.cpython-35.pyc
+core/__pycache__/FlowNet.cpython-35.pyc
+core/__pycache__/GeoNet_model.cpython-35.pyc
+core/__pycache__/PoseNet.cpython-35.pyc
+core/__pycache__/logger.cpython-35.pyc
+core/__pycache__/loss_functions.cpython-35.pyc
+core/__pycache__/sequence_folders.cpython-35.pyc

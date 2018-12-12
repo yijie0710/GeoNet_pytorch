@@ -17,10 +17,13 @@ cuda: False
 batch_size: 4
 save_ckpt_freq:
 output_log_freq:
-alpha_recon_image:
+epochs: 1000
+epoch_size: 100
+seed: 1234
 dispnet_encoder: 'VGG-16'
 disparity_scale_normalize: False
 
+alpha_recon_image:
 lambda_rw:
 lambda_ds:
 lambda_fw:

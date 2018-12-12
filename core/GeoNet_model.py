@@ -24,9 +24,9 @@ class GeoNetModel(object):
         self.batch_size = config['batch_size']
         self.device = device
         self.num_scales = 4
-        self.simi_alpha = config['alpha_image_similarity']
+        self.simi_alpha = config['alpha_recon_image']
         self.geometric_consistency_alpha = config['geometric_consistency_alpha']
-        self.geometric_consistency_beta = config['geometric_concsistency_beta']
+        self.geometric_consistency_beta = config['geometric_consistency_beta']
         self.loss_weight_rigid_warp = config['lambda_rw']
         self.loss_weight_disparity_smooth = config['lambda_ds']
         self.loss_weight_full_warp = config['lambda_fw']
@@ -280,7 +280,7 @@ class GeoNetModel(object):
             self.optimizer.zero_grad()
             self.loss_total.backward()
             self.loss_total.step()
-            
+
             #  log
             n_iter += 1
             losses.update(self.loss_total.item(), self.batch_size)
@@ -315,7 +315,7 @@ class GeoNetModel(object):
 
         self.train_loader = torch.utils.data.DataLoader(
             self.train_set, shuffle=True,
-            num_workers=self.config['num_workers'], batch_size=self.config['batch_size'], pin_memory=True)
+            num_workers=self.config['data_workers'], batch_size=self.config['batch_size'], pin_memory=True)
 
         optim_params = [{'params': v.parameters(), 'lr': self.config['learning_rate']}
                         for v in self.nets.values()]
