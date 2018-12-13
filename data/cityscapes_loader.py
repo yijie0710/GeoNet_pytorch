@@ -1,3 +1,4 @@
+# codes from https://github.com/yzcjtr/GeoNet
 # Mostly based on the code written by Tinghui Zhou: 
 # https://github.com/tinghuiz/SfMLearner/blob/master/data/cityscapes/cityscapes_loader.py
 from __future__ import division
