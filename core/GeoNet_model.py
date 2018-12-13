@@ -108,7 +108,7 @@ class GeoNetModel(object):
         self.poses = self.pose_net(self.posenet_inputs)
 
     def build_rigid_warp_flow(self):
-        # NOTE: this should be a python list,
+        # NOTE: this should be a python list,  
         # since the sizes of different level of the pyramid are not same
         self.fwd_rigid_flow_pyramid = []
         self.bwd_rigid_flow_pyramid = []
