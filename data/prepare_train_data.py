@@ -1,9 +1,14 @@
+# 1. create data loader for KITTI raw or KITTK odometry
+# 2. dump examples
+# 3. split data into train and val set
 import argparse
 import scipy.misc
 import numpy as np
 from joblib import Parallel, delayed
 from tqdm import tqdm
 from path import Path
+from imageio import imread,imsave
+import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("dataset_dir", metavar='DIR',
@@ -26,84 +31,131 @@ parser.add_argument("--num-threads", type=int, default=4, help="number of thread
 
 args = parser.parse_args()
 
+def concat_image_sequence(img_paths):
+    '''
+     the order of image_paths:
+        I_t-n, I_t-(n-1), ...,I_t-1, I_t, I_t+1, ..., I_t+(n-1),I_t+n 
+        I_t is the target view while the others are the src_views
+    '''
+    imgs = []
+    for i in img_paths:
+        im = np.array(imread(i))
+        imgs.append(im)
+    # concat
+    img_seq = np.concatenate(imgs,dim=1)
+    return img_seq
+    
+def dump_example(n,dump_dir):
+    # TODO: show progress
 
-def dump_example(scene,dump_root):
-    scene_list = data_loader.collect_scenes(scene)
-    for scene_data in scene_list:
-        dump_dir = dump_root/scene_data['rel_path']
-        dump_dir.makedirs_p()
-        intrinsics = scene_data['intrinsics']
+    example = data_loader.get_example_by_idx(n)
+    if not example: 
+        return
 
-        dump_cam_file = dump_dir/'cam.txt'
+    img_seq = concat_image_sequence(example['img_seq_paths'])
+    intrinsics = example['intrinsics']
+    fx = intrinsics[0, 0]
+    fy = intrinsics[1, 1]
+    cx = intrinsics[0, 2]
+    cy = intrinsics[1, 2]
 
-        np.savetxt(dump_cam_file, intrinsics)
-        poses_file = dump_dir/'poses.txt'
-        poses = []
+    img_path = '{}/{}.jpg'.format(dump_dir,example['file_name'])
+    cam_path = '{}/{}.cam'.format(dump_dir, example['file_name'])
+    
+    # dump image sequences into jpg
+    imsave(img_path,img_seq)
 
-        for sample in data_loader.get_scene_imgs(scene_data):
-            img, frame_nb = sample["img"], sample["id"]
-            dump_img_file = dump_dir/'{}.jpg'.format(frame_nb)
-            scipy.misc.imsave(dump_img_file, img)
-            if "pose" in sample.keys():
-                poses.append(sample["pose"].tolist())
-            if "depth" in sample.keys():
-                dump_depth_file = dump_dir/'{}.npy'.format(frame_nb)
-                np.save(dump_depth_file, sample["depth"])
-        if len(poses) != 0:
-            np.savetxt(poses_file, np.array(poses).reshape(-1, 12), fmt='%.6e')
+    # dump intrinsics into cam txt
+    with open(cam_path,'w') as f:
+        f.write('%f,0.,%f,0.,%f,%f,0.,0.,1.' % (fx, cx, fy, cy))
 
-        if len(dump_dir.files('*.jpg')) < 3:
-            dump_dir.rmtree()
+
+# def dump_example(scene,dump_root):
+#     scene_list = data_loader.collect_scenes(scene)
+#     for scene_data in scene_list:
+#         dump_dir = dump_root/scene_data['rel_path']
+#         dump_dir.makedirs_p()
+#         intrinsics = scene_data['intrinsics']
+
+#         dump_cam_file = dump_dir/'cam.txt'
+
+#         np.savetxt(dump_cam_file, intrinsics)
+#         poses_file = dump_dir/'poses.txt'
+#         poses = []
+
+#         for sample in data_loader.get_scene_imgs(scene_data):
+#             img, frame_nb = sample["img"], sample["id"]
+#             dump_img_file = dump_dir/'{}.jpg'.format(frame_nb)
+#             scipy.misc.imsave(dump_img_file, img)
+#             if "pose" in sample.keys():
+#                 poses.append(sample["pose"].tolist())
+#             if "depth" in sample.keys():
+#                 dump_depth_file = dump_dir/'{}.npy'.format(frame_nb)
+#                 np.save(dump_depth_file, sample["depth"])
+#         if len(poses) != 0:
+#             np.savetxt(poses_file, np.array(poses).reshape(-1, 12), fmt='%.6e')
+
+#         if len(dump_dir.files('*.jpg')) < 3:
+#             dump_dir.rmtree()
 
 
 def main():
-    args.dump_root = Path(args.dump_root)
-    args.dump_root.mkdir_p()
+    dump_root = Path(args.dump_root)
+    dump_root.mkdir_p()
 
     global data_loader
+    if args.dataset_name == 'kitti_odom':
+        from kitti_odom_loader import kitti_odom_loader
+        data_loader = kitti_odom_loader(args.dataset_dir,
+                                        img_height=args.img_height,
+                                        img_width=args.img_width,
+                                        seq_length=args.seq_length)
 
-    if args.dataset_format == 'kitti':
-        from kitti_raw_loader import KittiRawLoader
-        data_loader = KittiRawLoader(args.dataset_dir,
-                                     static_frames_file=args.static_frames,
-                                     img_height=args.height,
-                                     img_width=args.width,
-                                     get_depth=args.with_depth,
-                                     get_pose=args.with_pose,
-                                     depth_size_ratio=args.depth_size_ratio)
+    if args.dataset_name == 'kitti_raw_eigen':
+        from kitti_raw_loader import kitti_raw_loader
+        data_loader = kitti_raw_loader(args.dataset_dir,
+                                       split='eigen',
+                                       img_height=args.img_height,
+                                       img_width=args.img_width,
+                                       seq_length=args.seq_length,
+                                       remove_static=args.remove_static)
 
-    if args.dataset_format == 'cityscapes':
+    if args.dataset_name == 'kitti_raw_stereo':
+        from kitti_raw_loader import kitti_raw_loader
+        data_loader = kitti_raw_loader(args.dataset_dir,
+                                       split='stereo',
+                                       img_height=args.img_height,
+                                       img_width=args.img_width,
+                                       seq_length=args.seq_length,
+                                       remove_static=args.remove_static)
+
+    if args.dataset_name == 'cityscapes':
         from cityscapes_loader import cityscapes_loader
         data_loader = cityscapes_loader(args.dataset_dir,
-                                        img_height=args.height,
-                                        img_width=args.width)
+                                        img_height=args.img_height,
+                                        img_width=args.img_width,
+                                        seq_length=args.seq_length)
 
-    print('Retrieving frames')
-    if args.num_threads == 1:
-        for scene in tqdm(data_loader.scenes):
-            dump_example(scene, args.dump_root)
-    else:
-        Parallel(n_jobs=args.num_threads)(delayed(dump_example)(scene, args.dump_root)
-                                          for scene in tqdm(data_loader.scenes))
+    Parallel(n_jobs=args.num_threads)(delayed(dump_example)(n)
+                                      for n in range(data_loader.num_train))
 
+
+    # split data into train and val
+    # TODO: avoiding data snooping
     print('Generating train val lists')
     np.random.seed(8964)
-    # to avoid data snooping, we will make two cameras of the same scene to fall in the same set, train or val
-    subdirs = args.dump_root.dirs()
+    
+    img_files = [ f for f in os.listdir(args.dump_root) if os.path.splitext(f)[-1]=='.jpg']
     canonic_prefixes = set([subdir.basename()[:-2] for subdir in subdirs])
-    with open(args.dump_root / 'train.txt', 'w') as tf:
-        with open(args.dump_root / 'val.txt', 'w') as vf:
-            for pr in tqdm(canonic_prefixes):
-                corresponding_dirs = args.dump_root.dirs('{}*'.format(pr))
-                if np.random.random() < 0.1:
-                    for s in corresponding_dirs:
-                        vf.write('{}\n'.format(s.name))
+    with open('{}/train.txt'.format(args.dump_root), 'w') as tf:
+        with open('{}/val.txt'.format(args.dump_root), 'w') as vf:
+            for f in img_files:
+                if np.random.random()<0.1:
+                    vf.write('{}/{}'.format(args.dump_root,
+                                            os.path.splitext(f)[:-1]))
                 else:
-                    for s in corresponding_dirs:
-                        tf.write('{}\n'.format(s.name))
-                        if args.with_depth and args.no_train_gt:
-                            for gt_file in s.files('*.npy'):
-                                gt_file.remove_p()
+                    tf.write('{}/{}'.format(args.dump_root,
+                                            os.path.splitext(f)[:-1]))
 
 
 if __name__ == '__main__':
