@@ -47,7 +47,4 @@ class PoseNet(nn.Module):
 
 ###################Test###################
 
-net = PoseNet(5)
-print(net)
-
 

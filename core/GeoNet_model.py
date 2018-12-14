@@ -310,6 +310,8 @@ class GeoNetModel(object):
             transform=self.data_transform,
             train=True,
             seed=self.config['seed'],
+            img_height=self.config['img_height'],
+            img_width=self.config['img_width'],
             sequence_length=self.config['sequence_length']
         )
 

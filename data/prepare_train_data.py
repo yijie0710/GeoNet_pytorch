@@ -12,6 +12,8 @@ from tqdm import tqdm
 from path import Path
 from imageio import imread, imsave
 import os
+import time
+end = time.time()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset_dir",   type=str, required=True, help="where the dataset is stored")
@@ -20,7 +22,7 @@ parser.add_argument("--dump_root",     type=str, required=True, help="where to d
 parser.add_argument("--seq_length",    type=int, required=True, help="length of each training sequence")
 parser.add_argument("--img_height",    type=int, default=128,   help="image height")
 parser.add_argument("--img_width",     type=int, default=416,   help="image width")
-parser.add_argument("--num_threads",   type=int, default=4,     help="number of threads to use")
+parser.add_argument("--num_threads",   type=int, default=16,     help="number of threads to use")
 parser.add_argument("--remove_static", help="remove static frames from kitti raw data", action='store_true')
 
 args = parser.parse_args()
@@ -38,6 +40,11 @@ def concat_image_sequence(imgs):
 
 def dump_example(n, dump_dir):
     # TODO: show progress
+    global end
+    if n % 2000 == 0:
+        print('Progress %d/%d time: %d s....' %
+              (n, data_loader.num_train, time.time()-end))
+        end = time.time()
 
     example = data_loader.get_example_by_idx(n)
     if not example:
@@ -101,23 +108,24 @@ def main():
     Parallel(n_jobs=args.num_threads)(delayed(dump_example)(n,args.dump_root)
                                       for n in range(data_loader.num_train))
 
-    # split data into train and val
-    # TODO: avoiding data snooping
+    #split data into train and val
+    #TODO: avoiding data snooping
     print('Generating train val lists')
     np.random.seed(8964)
 
     img_files = [f for f in os.listdir(
         args.dump_root) if os.path.splitext(f)[-1] == '.jpg']
-    canonic_prefixes = set([subdir.basename()[:-2] for subdir in subdirs])
+    # canonic_prefixes = set([subdir.basename()[:-2] for subdir in subdirs])
     with open('{}/train.txt'.format(args.dump_root), 'w') as tf:
         with open('{}/val.txt'.format(args.dump_root), 'w') as vf:
             for f in img_files:
+                assert len(os.path.splitext(f))==2
                 if np.random.random() < 0.1:
-                    vf.write('{}/{}'.format(args.dump_root,
-                                            os.path.splitext(f)[:-1]))
+                    vf.write('{}/{}\n'.format(args.dump_root,
+                                            os.path.splitext(f)[0]))
                 else:
-                    tf.write('{}/{}'.format(args.dump_root,
-                                            os.path.splitext(f)[:-1]))
+                    tf.write('{}/{}\n'.format(args.dump_root,
+                                            os.path.splitext(f)[0]))
 
 
 if __name__ == '__main__':

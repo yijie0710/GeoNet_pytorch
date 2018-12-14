@@ -137,9 +137,6 @@ class DispNet(nn.Module):
             return out_disp1
         
 ###################Test###################
-net = DispNet()
-print(net)
-
 
         
 
