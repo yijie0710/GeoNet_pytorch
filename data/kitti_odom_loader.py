@@ -72,18 +72,18 @@ class kitti_odom_loader(object):
         return image_seq, zoom_x, zoom_y
 
     def load_example(self, frames, tgt_idx):
-        image_seq, zoom_x, zoom_y = self.load_image_sequence(frames, tgt_idx, self.seq_length)
+        image_seq, zoom_x, zoom_y = self.load_image_sequence(
+            frames, tgt_idx, self.seq_length)
         tgt_drive, tgt_frame_id = frames[tgt_idx].split(' ')
         intrinsics = self.load_intrinsics(tgt_drive, tgt_frame_id)
         intrinsics = self.scale_intrinsics(intrinsics, zoom_x, zoom_y)        
         example = {}
         example['intrinsics'] = intrinsics
         example['image_seq'] = image_seq
-        example['folder_name'] = tgt_drive
-        example['file_name'] = tgt_frame_id
+        example['file_name'] = '{}_{}'.format(tgt_drive, tgt_frame_id)
         return example
 
-    def get_train_example_with_idx(self, tgt_idx):
+    def get_example_by_idx(self, tgt_idx):
         if not self.is_valid_sample(self.train_frames, tgt_idx):
             return False
         example = self.load_example(self.train_frames, tgt_idx)

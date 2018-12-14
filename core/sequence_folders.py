@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Modified based on https://github.com/ClementPinard/SfmLearner-Pytorch/blob/master/datasets/sequence_folders.py
+# Modified on https://github.com/ClementPinard/SfmLearner-Pytorch/blob/master/datasets/sequence_folders.py
 
 import torch.utils.data as data
 import numpy as np
