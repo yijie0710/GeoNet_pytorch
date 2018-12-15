@@ -76,7 +76,7 @@ class SequenceFolder(data.Dataset):
         self.root = root
 
         self.split = 'min_train' if train else 'val'
-        self.example_names = [name.split('\n')[0] for name in open(
+        self.example_names = [name.split('\n')[0].split('/')[-1] for name in open(
             '{}/{}.txt'.format(self.root, self.split))]
         # self.data_folder = '{}/{}'.format(self.root, self.split)
         # if not os.path.exists(self.data_folder):
