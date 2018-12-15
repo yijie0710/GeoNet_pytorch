@@ -80,7 +80,8 @@ class GeoNetModel(object):
         self.intrinsics = intrinsics.to(self.device).float()
         # Assumme src_views is stack and the shapes is #batch,#3*#src_views,h,w
         # shape: #batch*#src_views,3,h,w
-
+        from IPython import embed
+        embed()
         self.src_views_concat = torch.cat([self.src_views[:, 3*s:3*(s+1), :, :]
                                            for s in range(self.num_source)], dim=0)
 

@@ -20,3 +20,4 @@ core/__pycache__/loss_functions.cpython-35.pyc
 core/__pycache__/sequence_folders.cpython-35.pyc
 data/__pycache__/kitti_odom_loader.cpython-35.pyc
 .gitignore
+.vscode/settings.json

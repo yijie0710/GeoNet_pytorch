@@ -17,37 +17,25 @@ def make_sequence_views(img_path, sequence_length, width):
     demi_length = (sequence_length-1)//2
     tgt_view = np.array(
         views[:,width*demi_length:width*(demi_length+1),: ])
+
+    # shape: (chnls, h, w)
     tgt_view = np.moveaxis(tgt_view,-1,0)
 
     src_ids = list(range(0, demi_length)) + \
         list(range(demi_length+1, sequence_length))
     src_views = [views[:, width*i:width*(i+1), :] for i in src_ids]
+    # shape: (h, w, chnls)
     src_views = np.concatenate(src_views,axis=2)
-    # src_views = np.array(src_views)
+    # shape: (chnls, h, w)
     src_views = np.moveaxis(src_views, -1, 0)
 
-    # output shapes:
-    # tgt_view: (chnl,h,w)
-    # src_views: (chnl*(sequence_length-1)//2, h, w)
-    views = np.array(imread(img_path))
-    views = np.moveaxis(views, -1, 0).astype(float)
-    w = views.shape[2]
-    assert w == sequence_length*width
-    demi_length = (sequence_length-1)//2
-    tgt_view = np.array(
-        views[:, :, width*demi_length:width*(demi_length+1)])
-    src_ids = list(range(0, demi_length)) + \
-        list(range(demi_length+1, sequence_length))
-    # TODO: what's wrong?
-    src_views = [views[:, :, width*i:width*(i+1)] for i in src_ids]
-    src_views = np.array(src_views)
     return tgt_view, src_views
 
 
 def make_instrinsics(cam_path):
     with open(cam_path, 'r') as f:
         intrinsics = np.array(f.readline().split()[0].split(
-            ',')).astype(np.float64).reshape(3, 3)
+            ',')).astype(np.float32).reshape(3, 3)
     return intrinsics
 
 
