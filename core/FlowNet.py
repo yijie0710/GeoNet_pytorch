@@ -39,7 +39,7 @@ def get_flow(in_chnls):
 
 
 class FlowNet(nn.Module):
-    def __init__(self,input_chnls):
+    def __init__(self,input_chnls,flow_scale_factor):
         super(FlowNet, self).__init__()
         # TODO: more inputs should be added
         #encode
@@ -64,14 +64,17 @@ class FlowNet(nn.Module):
         self.iconv6 = conv(512+512, 512)
         self.iconv5 = conv(256+256, 256)
         self.iconv4 = conv(128+128, 128)
-        self.iconv3 = conv(64+64+1, 64)   # 64+64+2 in 1/4 out 1/4
-        self.iconv2 = conv(32+32+1, 32)  #  32+32+2 in 1/2 out 1/2
-        self.iconv1 = conv(16+1, 16)  #  16+2 in 1/1 out 1/1
+        self.iconv3 = conv(64+64+2, 64)   # 64+64+2 in 1/4 out 1/4
+        self.iconv2 = conv(32+32+2, 32)  #  32+32+2 in 1/2 out 1/2
+        self.iconv1 = conv(16+2, 16)  #  16+2 in 1/1 out 1/1
 
         self.flow4 = get_flow(128)
         self.flow3 = get_flow(64)
         self.flow2 = get_flow(32)
         self.flow1 = get_flow(16)
+
+        self.alpha = flow_scale_factor
+        self.beta = 0
     
     def init_weights(self):
         pass
@@ -92,7 +95,7 @@ class FlowNet(nn.Module):
         out_iconv7 = self.iconv7(concat7)
 
         out_upconv6 = resize_like(self.upconv6(out_iconv7), out_conv5)
-        concat6 = torch.cat((out_upconv6, out_conv5))
+        concat6 = torch.cat((out_upconv6, out_conv5),1)
         out_iconv6 = self.iconv6(concat6)
 
         out_upconv5 = resize_like(self.upconv5(out_iconv6), out_conv4)
@@ -100,7 +103,7 @@ class FlowNet(nn.Module):
         out_iconv5 = self.iconv5(concat5)
 
         out_upconv4 = resize_like(self.upconv4(out_iconv5), out_conv3)
-        concat4 = torch.cat((out_upconv4, out_conv3))
+        concat4 = torch.cat((out_upconv4, out_conv3),1)
         out_iconv4 = self.iconv4(concat4)
         out_flow4 = self.alpha*self.flow4(out_iconv4)+self.beta
 
@@ -122,7 +125,7 @@ class FlowNet(nn.Module):
         out_upflow2 = resize_like(F.interpolate(
             out_flow2, scale_factor=2, mode='bilinear', align_corners=False), x)
         concat1 = torch.cat((out_upconv1, out_upflow2), 1)
-        out_iconv1 = self.iconv1(concat1)
+        out_iconv1 = self.iconv1(concat1) 
         out_flow1 = self.alpha*self.flow1(out_iconv1)+self.beta
 
         if self.training:

@@ -9,25 +9,26 @@ img_height: 128
 img_width: 416 
 
 # Training
-ckpt_dir: 
-log_dir: 
-learning_rate:
+ckpt_dir: /home/yijie/exper/slam/20181215/ckpt
+log_dir: /home/yijie/exper/slam/20181215/log
+learning_rate: 0.0002
 iter: 10000
 cuda: False
 batch_size: 4
-save_ckpt_freq:
-output_log_freq:
+save_ckpt_freq: 200
+output_log_freq: 200
 epochs: 1000
 epoch_size: 100
-seed: 1234
+seed: 8964
 dispnet_encoder: 'VGG-16'
 disparity_scale_normalize: False
 momentum: 0.9
 beta: 0.999
 weight_decay: 0.9
 epoch: 1000
+flow_scale_factor: 0.1
 
-alpha_recon_image: 1
+alpha_recon_image: 0.5
 lambda_rw: 1
 lambda_ds: 1
 lambda_fw: 1

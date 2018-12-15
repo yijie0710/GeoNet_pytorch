@@ -59,14 +59,15 @@ def DSSIM(x, y):
     # TODO: padding depend on the size of the input image sequences
 
     avepooling2d = torch.nn.AvgPool2d(3, stride=1, padding=[1, 1])
-    mu_x = avepooling2d(x.float())
+    mu_x = avepooling2d(x)
     mu_y = avepooling2d(y)
-    sigma_x = avepooling2d((x.float()-mu_x)**2)
+    sigma_x = avepooling2d((x-mu_x)**2)
     sigma_y = avepooling2d((y-mu_y)**2)
-    sigma_xy = avepooling2d((x.float()-mu_x)*(y-mu_y))
+    sigma_xy = avepooling2d((x-mu_x)*(y-mu_y))
     k1_square = 0.01**2
     k2_square = 0.03**2
-    L_square = 255**2
+    # L_square = 255**2
+    L_square = 1
     SSIM_n = (2*mu_x*mu_y+k1_square*L_square)*(2*sigma_xy+k2_square*L_square)
     SSIM_d = (mu_x**2+mu_y**2+k1_square*L_square) * \
         (sigma_x+sigma_y+k2_square*L_square)
@@ -105,12 +106,11 @@ def compute_multi_scale_intrinsics(intrinsics, num_scales):
         fy = intrinsics[:, 1, 1]/(2**s)
         cx = intrinsics[:, 0, 2]/(2**s)
         cy = intrinsics[:, 1, 2]/(2**s)
-        zeros = torch.zeros(batch_size).type(torch.DoubleTensor)
+        zeros = torch.zeros(batch_size).float()
         r1 = torch.stack([fx, zeros, cx], dim=1)  # shape: batch_size,3
         r2 = torch.stack([zeros, fy, cy], dim=1)  # shape: batch_size,3
         # shape: batch_size,3
-        r3 = torch.tensor([0., 0., 1.]).type(
-            torch.DoubleTensor).view(1, 3).repeat(batch_size, 1)
+        r3 = torch.tensor([0., 0., 1.]).float().view(1, 3).repeat(batch_size, 1)
         # concat along the spatial row dimension
         scale_instrinsics = torch.stack([r1, r2, r3], dim=1)
         multi_scale_intrinsices.append(
@@ -232,7 +232,7 @@ def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
 
     # debug:
     # shape: matmul( (#batch,1,3,3) ,(h*w,3,1)) = (#batch,h*w,3,1)
-    tgt_coords = torch.matmul(intrinsics_inv.float(), src_coords)
+    tgt_coords = torch.matmul(intrinsics_inv, src_coords)
 
     # shape: (#batch, h*w,3,1)
     _depth = depth.clone().view(batch_size,h*w).repeat(3, 1,1).permute(1, 2, 0).view(batch_size, h*w, 3, 1)
@@ -255,7 +255,7 @@ def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
     intrinsics = intrinsics.repeat(h*w, 1,1,1).transpose(1, 0)
 
     # shape: matmul((#batch,h*w,3,3),(#batch,h*w,3,1)) = (#batch,h*w,3,1)
-    tgt_coords = torch.matmul(intrinsics.float(), tgt_coords)
+    tgt_coords = torch.matmul(intrinsics, tgt_coords)
 
     # shape: (#batch,h*w,3,1)
     src_coords = src_coords.repeat(batch_size, 1,1,1)
@@ -271,5 +271,5 @@ def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
 def flow_warp(src_img, src2tgt_flow):
     # TODO: flow warp
     flow_field = src2tgt_flow.clone().permute(0, 2, 3, 1)
-    tgt_img = F.grid_sample(src_img.float(), flow_field.float())
+    tgt_img = F.grid_sample(src_img, flow_field)
     return tgt_img

@@ -2,8 +2,7 @@ import torch
 from utils import *
 
 def image_similarity(alpha,x,y):
-
-    return alpha*DSSIM(x,y)+(1-alpha)*torch.abs(x.float()-y)
+    return alpha*DSSIM(x,y)+(1-alpha)*torch.abs(x-y)
 
 def smooth_loss(depth,image):
     gradient_depth_x = gradient_x(depth)  # (TODO)shape: bs,1,h,w
@@ -18,13 +17,13 @@ def smooth_loss(depth,image):
     smooth_x = gradient_depth_x*exp_gradient_img_x
     smooth_y = gradient_depth_y*exp_gradient_img_y
 
-    return torch.mean(smooth_x+smooth_y)
+    return torch.mean(torch.abs(smooth_x))+torch.mean(torch.abs(smooth_y))
 
 def flow_smooth_loss(flow,img):
     # TODO two flows ?= rigid flow + object motion flow
     smoothness = 0
     for i in range(2):
         # TODO shape of flow: bs,channels(2),h,w
-        smoothness += smooth_loss(flow[:, i, :, :].unsqueeze(-1), img)
+        smoothness += smooth_loss(flow[:, i, :, :].unsqueeze(1), img)
     return smoothness/2
 
