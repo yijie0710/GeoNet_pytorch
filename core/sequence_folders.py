@@ -7,30 +7,35 @@ from imageio import imread
 # from path import Path
 import random
 import os
+from joblib import Parallel, delayed
 
 
-def load_as_float(path):
-    return imread(path).astype(np.float32)
-
-
-def make_sequence_views(img_path):
-    views = np.array(imread(img_path))
-    views = np.moveaxis(views, -1, 0)
-    w = views.shape[2]
-    assert w == self.sequence_length*self.width
-    demi_length = (self.sequence_length-1)//2
+def make_sequence_views(img_path, sequence_length, width):
+    views = np.array(imread(img_path)).astype(np.float64)
+    w = views.shape[1]
+    assert w == sequence_length*width
+    demi_length = (sequence_length-1)//2
     tgt_view = np.array(
-        views[:, :, self.width*demi_length:self.width*(demi_length+1)])
-    src_ids = list(range(0, demi_length)+list(range(demi_length+1, self.sequence_length))
-    # TODO: what's wrong?
-    src_views=[views[:, :, self.width*i: self.width*(i+1)] for i in src_ids]
-    src_views=np.array(src_views)
+        views[:,width*demi_length:width*(demi_length+1),: ])
+    tgt_view = np.moveaxis(tgt_view,-1,0)
+
+    src_ids = list(range(0, demi_length)) + \
+        list(range(demi_length+1, sequence_length))
+    src_views = [views[:, width*i:width*(i+1), :] for i in src_ids]
+    src_views = np.concatenate(src_views,axis=2)
+    # src_views = np.array(src_views)
+    src_views = np.moveaxis(src_views, -1, 0)
+
+    # output shapes:
+    # tgt_view: (chnl,h,w)
+    # src_views: (chnl*(sequence_length-1)//2, h, w)
     return tgt_view, src_views
+
 
 def make_instrinsics(cam_path):
     with open(cam_path, 'r') as f:
-        intrinsics=f.readline().split()
-    intrinsics=np.array(intrinsics.split(' ')).astype(float).reshape(3, 3)
+        intrinsics = np.array(f.readline().split()[0].split(
+            ',')).astype(np.float64).reshape(3, 3)
     return intrinsics
 
 
@@ -53,62 +58,81 @@ class SequenceFolder(data.Dataset):
         transform functions must take in a list a images and a numpy array (usually intrinsics matrix)
     """
 
-    def __init__(self, root, seed=None, train=True, sequence_length=3, img_width, img_height, transform=None, target_transform=None):
+    def __init__(self, root, seed, train, sequence_length, img_width, img_height, transform=None, target_transform=None):
         np.random.seed(seed)
         random.seed(seed)
-        self.root=root
-        self.split='train' if train else 'val'
-        self.data_folder='{}/{}'.format(self.root, split)
-        if not os.path.exists(self.data_folder):
-            raise ValueError(
-                '{} set of {} does not exist'.format(split, self.root))
+        self.root = root
+        self.split = 'min_train' if train else 'val'
+        self.example_names = [name.split('\n')[0].split('/')[-1] for name in open(
+            '{}/{}.txt'.format(self.root, self.split))]
+        # self.data_folder = '{}/{}'.format(self.root, self.split)
+        # if not os.path.exists(self.data_folder):
+        #     raise ValueError(
+        #         '{} set of {} does not exist'.format(self.split, self.root))
         if sequence_length % 2 == 0:
             raise ValueError(
                 'sequence length should be odd while the input is {}'.format(sequence_length))
-        self.sequence_length=sequence_length
-        self.width=img_width
-        self.img_height=img_height
-        make_samples()
+        self.sequence_length = sequence_length
+        self.width = img_width
+        self.img_height = img_height
 
+        self.make_samples()
+
+    def make_sample(self, i):
+        if i % 200 == 0:
+            print('progress: {}/{}'.format(i, len(self.imgs)))
+        tgt_view, src_views = make_sequence_views(
+            self.imgs[i], self.sequence_length, self.width)
+        intrinsics = make_instrinsics(self.cams[i])
+
+        '''
+            the shapes of samples:
+            tgt_view: (chnl, h, w)
+            src_views, (self.sequence_length-1, chnls, h, w)
+            intrinsics: (3, 3)
+        '''
+        sample = {'tgt_view': tgt_view,
+                  'src_views': src_views, 'intrinsics': intrinsics}
+
+        self.samples.append(sample)
 
     def make_samples(self):
-        all_files=os.listdir(self.data_folder)
-        imgs=[]
-        cams=[]
-        for f in all_files:
-            if os.path.splitext(f)[-1] == '.jpg':
-                imgs.append(f)
-            elif os.path.splitext(f)[-1] == '.cam':
-                cams.append(f)
+
+        imgs = ['{}/{}.jpg'.format(self.root, name)
+                for name in self.example_names]
+        cams = ['{}/{}.cam'.format(self.root, name)
+                for name in self.example_names]
 
         assert len(imgs) == len(cams)
 
-        imgs=sorted(imgs)
-        cams=sorted(cams)
-        self.samples=[]
-        for i in range(len(imgs)):
-            tgt_view, src_views=make_sequence_views(
-                '{}/{}'.format(self.data_folder, imgs[i]))
-            intrinsics=make_instrinsics(
-                '{}/{}'.format(self.data_folder, cams[i]))
+        self.imgs = sorted(imgs)
+        self.cams = sorted(cams)
+        self.samples = []
+        for i in range(len(self.imgs)):
+            self.make_sample(i)
+        # Parallel(n_jobs=96)(delayed(self.make_sample)(i)
+        #                     for i in range(len(self.imgs)))
+        # for i in range(len(imgs)):
+        #     tgt_view, src_views = make_sequence_views(
+        #         imgs[i], self.sequence_length, self.width)
+        #     intrinsics = make_instrinsics(cams[i])
 
-            '''
-                the shapes of samples:
-                tgt_view: (chnl, h, w)
-                src_views, (self.sequence_length-1, chnls, h, w)
-                intrinsics: (3, 3)
-            '''
-            sample={'tgt_view': tgt_view,
-                'src_views': src_views, 'intrinsics': intrinsics}
+        #     '''
+        #         the shapes of samples:
+        #         tgt_view: (chnl, h, w)
+        #         src_views, (self.sequence_length-1, chnls, h, w)
+        #         intrinsics: (3, 3)
+        #     '''
+        #     sample = {'tgt_view': tgt_view,
+        #               'src_views': src_views, 'intrinsics': intrinsics}
 
-            self.samples.append(sample)
-        
+        #     self.samples.append(sample)
+
         random.shuffle(self.samples)
-        
 
     def __getitem__(self, index):
-        sample=self.samples[index]
-        return sample['tgt_view'], sample['src_views'], sample['intrinsics']
+        sample = self.samples[index]
+        return np.copy(sample['tgt_view']), np.copy(sample['src_views']), np.copy(sample['intrinsics'])
 
     def __len__(self):
         return len(self.samples)

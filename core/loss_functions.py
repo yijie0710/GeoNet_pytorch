@@ -2,7 +2,8 @@ import torch
 from utils import *
 
 def image_similarity(alpha,x,y):
-    return alpha*DSSIM(x,y)+(1-alpha)*torch.abs(x-y)
+
+    return alpha*DSSIM(x,y)+(1-alpha)*torch.abs(x.float()-y)
 
 def smooth_loss(depth,image):
     gradient_depth_x = gradient_x(depth)  # (TODO)shape: bs,1,h,w

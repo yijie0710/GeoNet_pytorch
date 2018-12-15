@@ -83,7 +83,9 @@ class DispNet(nn.Module):
 
     def forward(self,x): 
         #encode 
+        
         out_conv1 = self.conv1(x)
+        
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)
         out_conv4 = self.conv4(out_conv3)
@@ -97,7 +99,7 @@ class DispNet(nn.Module):
         out_iconv7 = self.iconv7(concat7)
 
         out_upconv6 = resize_like(self.upconv6(out_iconv7),out_conv5)
-        concat6 = torch.cat((out_upconv6,out_conv5))
+        concat6 = torch.cat((out_upconv6,out_conv5),1)
         out_iconv6 = self.iconv6(concat6)
 
         out_upconv5 = resize_like(self.upconv5(out_iconv6),out_conv4)
@@ -105,7 +107,7 @@ class DispNet(nn.Module):
         out_iconv5 = self.iconv5(concat5)
 
         out_upconv4= resize_like(self.upconv4(out_iconv5),out_conv3)
-        concat4 = torch.cat((out_upconv4,out_conv3))
+        concat4 = torch.cat((out_upconv4,out_conv3),1)
         out_iconv4 = self.iconv4(concat4)
         out_disp4 = self.alpha*self.disp4(out_iconv4)+self.beta
         
@@ -137,9 +139,6 @@ class DispNet(nn.Module):
             return out_disp1
         
 ###################Test###################
-net = DispNet()
-print(net)
-
 
         
 

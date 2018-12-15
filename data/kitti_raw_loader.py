@@ -84,7 +84,7 @@ class kitti_raw_loader(object):
             return True
         return False
 
-    def get_train_example_with_idx(self, tgt_idx):
+    def get_example_by_idx(self, tgt_idx):
         if not self.is_valid_sample(self.train_frames, tgt_idx):
             return False
         example = self.load_example(self.train_frames, tgt_idx)
@@ -112,8 +112,9 @@ class kitti_raw_loader(object):
         example = {}
         example['intrinsics'] = intrinsics
         example['image_seq'] = image_seq
-        example['folder_name'] = tgt_drive + '_' + tgt_cid + '/'
-        example['file_name'] = tgt_frame_id
+        # example['folder_name'] = tgt_drive + '_' + tgt_cid + '/'
+        # example['file_name'] = tgt_frame_id
+        example['file_name'] = '{}_{}'.format(tgt_drive, tgt_frame_id)
         return example
 
     def load_image_raw(self, drive, cid, frame_id):

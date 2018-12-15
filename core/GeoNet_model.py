@@ -20,7 +20,7 @@ class GeoNetModel(object):
 
     def __init__(self, config, device):
         self.config = config
-        self.num_source = config['num_source']
+        self.num_source = config['sequence_length']-1
         self.batch_size = config['batch_size']
         self.device = device
         self.num_scales = 4
@@ -45,22 +45,28 @@ class GeoNetModel(object):
         '''Nets preparation
         '''
         self.disp_net = DispNet.DispNet()
-        self.pose_net = PoseNet.PoseNet(config['num_source'])
+        self.pose_net = PoseNet.PoseNet(self.num_source)
         '''input channels:
             #src_views * (3 tgt_rgb + 3 src_rgb + 3 warp_rgb + 2 flow_xy +1 error )
         '''
         self.flow_net = FlowNet.FlowNet(12*self.num_source)
+        if self.device.type == 'cuda':
+            self.disp_net.cuda()
+            self.pose_net.cuda()
+            self.flow_net.cuda()
+
         self.nets = {'disp': self.disp_net,
                      'pose': self.pose_net,
                      'flow': self.flow_net}
 
     def iter_data_preparation(self, sampled_batch):
+        # sampled_batch: tgt_view, src_views, intrinsics
         # shape: batch,chnls h,w
-        tgt_view = sampled_batch['tgt_img']
+        tgt_view = sampled_batch[0]
         # shape: batch,num_source,chnls,h,w
-        src_views = sampled_batch['src_imgs']
+        src_views = sampled_batch[1]
         # shape: batch,3,3
-        intrinsics = sampled_batch['intrinsics']
+        intrinsics = sampled_batch[2]
 
         # to device
         # shape: #batch,3,h,w
@@ -69,6 +75,7 @@ class GeoNetModel(object):
         self.intrinsics = intrinsics.to(self.device)
         # Assumme src_views is stack and the shapes is #batch,#3*#src_views,h,w
         # shape: #batch*#src_views,3,h,w
+
         self.src_views_concat = torch.cat([src_views[:, 3*s:3*(s+1), :, :]
                                            for s in range(self.num_source)], dim=0)
 
@@ -92,34 +99,38 @@ class GeoNetModel(object):
 
         # for multiple disparity prediction,
         # cat tgt_view and src_views along the batch dimension
+
         for s in range(self.num_source):
             self.dispnet_inputs = torch.cat(
-                (self.dispnet_inputs, self.src_views[:, 3*s:s*(s+1), :, :]), dim=0)
+                (self.dispnet_inputs, self.src_views[:, 3*s:3*(s+1), :, :]), dim=0)
 
         # shape: pyramid_scales, #batch+#batch*#src_views, h,w
-        self.disparities = self.disp_net(self.dispnet_inputs)
+        self.disparities = self.disp_net(self.dispnet_inputs.float())
         # TODO: spatial normalize the predict disparities
 
         # shape: pyramid_scales, bs, h,w
         self.depth = [1/disp for disp in self.disparities]
+        self.depth = [d.squeeze_(1) for d in self.depth]
 
     def build_posenet(self):
         self.posenet_inputs = torch.cat((self.tgt_view, self.src_views), dim=1)
-        self.poses = self.pose_net(self.posenet_inputs)
+        self.poses = self.pose_net(self.posenet_inputs.float())
 
     def build_rigid_warp_flow(self):
-        # NOTE: this should be a python list,  
+        # NOTE: this should be a python list,
         # since the sizes of different level of the pyramid are not same
         self.fwd_rigid_flow_pyramid = []
         self.bwd_rigid_flow_pyramid = []
 
         for scale in range(self.num_scales):
+
             for src in range(self.num_source):
-                fwd_rigid_flow = compute_rigid_flow(self.poses[:, src, :], self.depth[scale, :self.batch_size, :, :],
+                fwd_rigid_flow = compute_rigid_flow(self.poses[:, src, :], self.depth[scale][:self.batch_size, :, :],
                                                     self.multi_scale_intrinsices[:, scale, :, :], False)
+
                 bwd_rigid_flow = compute_rigid_flow(self.poses[:, src, :],
-                                                    self.depth[scale, self.batch_size*(
-                                                        src+1):src:self.batch_size*(src+2), :, :],
+                                                    self.depth[scale][self.batch_size*(
+                                                        src+1):self.batch_size*(src+2), :, :],
                                                     self.multi_scale_intrinsices[:, scale, :, :], True)
                 if not src:
                     fwd_rigid_flow_cat = fwd_rigid_flow
@@ -129,21 +140,24 @@ class GeoNetModel(object):
                         (fwd_rigid_flow_cat, fwd_rigid_flow), dim=0)
                     bwd_rigid_flow_cat = torch.cat(
                         (bwd_rigid_flow_cat, bwd_rigid_flow), dim=0)
+
             self.fwd_rigid_flow_pyramid.append(fwd_rigid_flow_cat)
             self.bwd_rigid_flow_pyramid.append(bwd_rigid_flow_cat)
 
         self.fwd_rigid_warp_pyramid = [
             flow_warp(self.src_views_pyramid[scale],
-                      self.fwd_rigid_flow_pyramid[s])
-            for scale in range(self.num_scales)]
-        self.bwd_rigid_warp_pyramid = [
-            flow_warp(
-                self.tgt_view_tile_pyramid[s], self.bwd_rigid_flow_pyramid[s])
+                      self.fwd_rigid_flow_pyramid[scale])
             for scale in range(self.num_scales)]
 
-        self.fwd_rigid_error_pyramid = [image_similarity(self.simi_alpha, self.tgt_view_tile_pyramid[scale], self.fwd_rigid_warp_pyramid[s])
+        self.bwd_rigid_warp_pyramid = [
+            flow_warp(
+                self.tgt_view_tile_pyramid[scale],
+                self.bwd_rigid_flow_pyramid[scale])
+            for scale in range(self.num_scales)]
+
+        self.fwd_rigid_error_pyramid = [image_similarity(self.simi_alpha, self.tgt_view_tile_pyramid[scale], self.fwd_rigid_warp_pyramid[scale])
                                         for scale in range(self.num_scales)]
-        self.bwd_rigid_error_pyramid = [image_similarity(self.simi_alpha, self.src_views_pyramid[scale], self.bwd_rigid_warp_pyramid[s])
+        self.bwd_rigid_error_pyramid = [image_similarity(self.simi_alpha, self.src_views_pyramid[scale], self.bwd_rigid_warp_pyramid[scale])
                                         for scale in range(self.num_scales)]
 
     def build_flownet(self):
@@ -153,6 +167,8 @@ class GeoNetModel(object):
         #   make input of the flowNet
         # cat along the color channels
         # shapes: #batch*#src_views, 3+3+3+2+1,h,w
+        from IPython import embed
+        embed()
         fwd_flownet_inputs = torch.cat(
             (self.tgt_view_tile_pyramid[0], self.src_views_pyramid[0],
                 self.fwd_rigid_warp_pyramid[0], self.fwd_rigid_flow_pyramid[0],
@@ -167,7 +183,7 @@ class GeoNetModel(object):
                                     bwd_flownet_inputs), dim=0)
 
         # shape: (#batch*2, (3+3+3+2+1)*#src_views, h,w)
-        self.resflow = self.flow_net(flownet_inputs)
+        self.resflow = self.flow_net(flownet_inputs.float())
 
     def build_full_warp_flow(self):
         # unnormalize the pyramid flow back to pixel metric
@@ -176,7 +192,7 @@ class GeoNetModel(object):
             # create a scale factor matrix for pointwise multiplication
             # NOTE: flow channels x,y
             scale_factor = torch.tensor([w, h]).type(
-                torch.FloatTensor).view(1, 2, 1, 1)
+                torch.DoubleTensor).view(1, 2, 1, 1)
             scale_factor = scale_factor.repeat(batch_size, 1, h, w)
             self.resflow[s] = self.resflow[s]*scale_factor
 
@@ -217,9 +233,9 @@ class GeoNetModel(object):
         bwd_consist_bound_pyramid = [torch.max(s, self.geometric_consistency_alpha).clone().detach()
                                      for s in bwd_consist_bound_pyramid]
 
-        fwd_mask_pyramid = [torch.less(fwd_flow_diff_pyramid[s]*2**s, fwd_consist_bound_pyramid[s]).type(torch.FloatTensor)
+        fwd_mask_pyramid = [torch.less(fwd_flow_diff_pyramid[s]*2**s, fwd_consist_bound_pyramid[s]).type(torch.DoubleTensor)
                             for s in range(self.num_scales)]
-        bwd_mask_pyramid = [torch.less(bwd_flow_diff_pyramid[s]*2**s, bwd_consist_bound_pyramid[s]).type(torch.FloatTensor)
+        bwd_mask_pyramid = [torch.less(bwd_flow_diff_pyramid[s]*2**s, bwd_consist_bound_pyramid[s]).type(torch.DoubleTensor)
                             for s in range(self.num_scales)]
 
         # NOTE: loss
@@ -310,12 +326,14 @@ class GeoNetModel(object):
             transform=self.data_transform,
             train=True,
             seed=self.config['seed'],
+            img_height=self.config['img_height'],
+            img_width=self.config['img_width'],
             sequence_length=self.config['sequence_length']
         )
 
         self.train_loader = torch.utils.data.DataLoader(
             self.train_set, shuffle=True,
-            num_workers=self.config['data_workers'], batch_size=self.config['batch_size'], pin_memory=True)
+            num_workers=self.config['data_workers'], batch_size=self.config['batch_size'], pin_memory=False)
 
         optim_params = [{'params': v.parameters(), 'lr': self.config['learning_rate']}
                         for v in self.nets.values()]

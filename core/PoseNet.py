@@ -14,12 +14,12 @@ def downconv(in_chnls,out_chnls, kernel_size):
 
 class PoseNet(nn.Module):
 
-    def __init__(self,num_source):
+    def __init__(self, num_source):
         super(PoseNet, self).__init__()
         
         self.num_source = num_source
 
-        self.conv1 = downconv(3, 16, 7) #1/2
+        self.conv1 = downconv(3*(1+num_source), 16, 7) #1/2
         self.conv2 = downconv(16, 32, 5) #1/4
         self.conv3 = downconv(32, 64, 3) #1/8
         self.conv4 = downconv(64, 128, 3) #1/16
@@ -46,8 +46,5 @@ class PoseNet(nn.Module):
         return out_avg_poses
 
 ###################Test###################
-
-net = PoseNet(5)
-print(net)
 
 

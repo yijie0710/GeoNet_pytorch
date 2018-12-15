@@ -1,12 +1,12 @@
-num_source: 2
+
 ckpt_path: test
 
 
 data_workers: 6
-data: /home/yijie/data/slam/KITTI
+data: /home/yijie/data/slam/KITTI/formated_kitti_raw_eigen
 sequence_length: 3
-img_height:
-img_width:
+img_height: 128
+img_width: 416 
 
 # Training
 ckpt_dir: 
@@ -22,15 +22,19 @@ epoch_size: 100
 seed: 1234
 dispnet_encoder: 'VGG-16'
 disparity_scale_normalize: False
+momentum: 0.9
+beta: 0.999
+weight_decay: 0.9
+epoch: 1000
 
-alpha_recon_image:
-lambda_rw:
-lambda_ds:
-lambda_fw:
-lambda_fs:
-lambda_gc:
-geometric_consistency_alpha:
-geometric_consistency_beta:
+alpha_recon_image: 1
+lambda_rw: 1
+lambda_ds: 1
+lambda_fw: 1
+lambda_fs: 1
+lambda_gc: 1
+geometric_consistency_alpha: 1
+geometric_consistency_beta: 1
 
 # Inference
 result_dir:
