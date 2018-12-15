@@ -13,9 +13,7 @@ def main():
     with open(args.config,'r') as f:
         config = yaml.load(f)
     
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-
-    geonet = GeoNetModel(config,device)
+    geonet = GeoNetModel(config)
 
     if args.train:
         geonet.train()

@@ -9,8 +9,8 @@ img_height: 128
 img_width: 416 
 
 # Training
-ckpt_dir: /home/yijie/exper/slam/20181215/ckpt
-log_dir: /home/yijie/exper/slam/20181215/log
+ckpt_dir: /home/yijie/exper/geonet/20181215/ckpt
+log_dir: /home/yijie/exper/geonet/20181215/log
 learning_rate: 0.0002
 iter: 10000
 cuda: False

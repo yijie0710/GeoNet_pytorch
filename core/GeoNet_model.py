@@ -14,29 +14,32 @@ import time
 import csv
 
 n_iter = 0
-
+device = torch.device(
+    'cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 class GeoNetModel(object):
 
-    def __init__(self, config, device):
+    def __init__(self, config):
+        global device
         self.config = config
         self.num_source = config['sequence_length']-1
         self.batch_size = config['batch_size']
-        self.device = device
         self.num_scales = 4
-        self.simi_alpha = torch.tensor(config['alpha_recon_image']).float()
+        self.simi_alpha = torch.tensor(config['alpha_recon_image']).float().to(device)
         self.geometric_consistency_alpha = torch.tensor(
-            config['geometric_consistency_alpha']).float()
+            config['geometric_consistency_alpha']).float().to(device)
         self.geometric_consistency_beta = torch.tensor(
-            config['geometric_consistency_beta']).float()
-        self.loss_weight_rigid_warp = torch.tensor(config['lambda_rw']).float()
+            config['geometric_consistency_beta']).float().to(device)
+        self.loss_weight_rigid_warp = torch.tensor(
+            config['lambda_rw']).float().to(device)
         self.loss_weight_disparity_smooth = torch.tensor(
-            config['lambda_ds']).float()
-        self.loss_weight_full_warp = torch.tensor(config['lambda_fw']).float()
+            config['lambda_ds']).float().to(device)
+        self.loss_weight_full_warp = torch.tensor(
+            config['lambda_fw']).float().to(device)
         self.loss_weigtht_full_smooth = torch.tensor(
-            config['lambda_fs']).float()
+            config['lambda_fs']).float().to(device)
         self.loss_weight_geometrical_consistency = torch.tensor(
-            config['lambda_gc']).float()
+            config['lambda_gc']).float().to(device)
         self.epochs = config['epochs']
         self.epoch_size = config['epoch_size']
         self.log = '{}/log_{}'.format(config['log_dir'], time.time())
@@ -55,7 +58,7 @@ class GeoNetModel(object):
             #src_views * (3 tgt_rgb + 3 src_rgb + 3 warp_rgb + 2 flow_xy +1 error )
         '''
         self.flow_net = FlowNet.FlowNet(12, self.config['flow_scale_factor'])
-        if self.device.type == 'cuda':
+        if device.type == 'cuda':
             self.disp_net.cuda()
             self.pose_net.cuda()
             self.flow_net.cuda()
@@ -75,13 +78,11 @@ class GeoNetModel(object):
 
         # to device
         # shape: #batch,3,h,w
-        self.tgt_view = tgt_view.to(self.device).float()
-        self.src_views = src_views.to(self.device).float()
-        self.intrinsics = intrinsics.to(self.device).float()
+        self.tgt_view = tgt_view.to(device).float()
+        self.src_views = src_views.to(device).float()
+        self.intrinsics = intrinsics.to(device).float()
         # Assumme src_views is stack and the shapes is #batch,#3*#src_views,h,w
         # shape: #batch*#src_views,3,h,w
-        from IPython import embed
-        embed()
         self.src_views_concat = torch.cat([self.src_views[:, 3*s:3*(s+1), :, :]
                                            for s in range(self.num_source)], dim=0)
 
@@ -197,8 +198,7 @@ class GeoNetModel(object):
             batch_size, _, h, w = self.resflow[s].shape
             # create a scale factor matrix for pointwise multiplication
             # NOTE: flow channels x,y
-            scale_factor = torch.tensor([w, h]).type(
-                torch.DoubleTensor).view(1, 2, 1, 1).float()
+            scale_factor = torch.tensor([w, h]).view(1, 2, 1, 1).float().to(device)
             scale_factor = scale_factor.repeat(batch_size, 1, h, w)
             resflow_scaling.append(self.resflow[s]*scale_factor)
 
@@ -296,8 +296,6 @@ class GeoNetModel(object):
         end = time.time()
 
         for i, sampled_batch in enumerate(self.train_loader):
-            from IPython import embed
-            embed()
             data_time.update(time.time()-end)
             self.iter_data_preparation(sampled_batch)
 
@@ -347,7 +345,7 @@ class GeoNetModel(object):
         )
 
         self.train_loader = torch.utils.data.DataLoader(
-            self.train_set, shuffle=True,
+            self.train_set, shuffle=True, drop_last=True,
             num_workers=self.config['data_workers'], batch_size=self.config['batch_size'], pin_memory=False)
 
         optim_params = [{'params': v.parameters(), 'lr': self.config['learning_rate']}
@@ -365,7 +363,7 @@ class GeoNetModel(object):
             self.train_logger.epoch_bar.update(epoch)
             self.train_logger.reset_train_bar()
             epoch_loss = self.training_inside_epoch()
-            self.train_logger.train_writer().write(
+            self.train_logger.train_writer.write(
                 ' * Avg Loss : {:.3f}'.format(epoch_loss))
 
     def test(self):

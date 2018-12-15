@@ -8,6 +8,8 @@ import math
 # def resize_2d(img, size):
 #     # Support resizin on GPU
 #     return (F.adaptive_avg_pool2d(Variable(img, volatile=True), size)).data
+device = torch.device(
+    'cuda') if torch.cuda.is_available() else torch.device('cpu')
 
 
 def scale_pyramid(img, num_scales):
@@ -83,18 +85,18 @@ def gradient_y(img):
     return img[:, :, :-1, :]-img[:, :, 1:, :]
 
 
-def residual_flow(intrinsics, T, Depth, pt):
-    # BETTER to use KTDK'pt-pt as matrix multiple or by formulation as equations?
-    pc = torch.tensor([(pt[0]-intrinsics.cx)*Depth/intrinsics.fx,
-                       (pt[1]-intrinsics.cy)*Depth/intrinsics.fy,
-                       Depth,
-                       1],
-                      requires_grad=True)
-    pc_n = torch.matmul(T, pc)
-    pt_n = torch.tensor([intrinsics.fx*pc_n[0]/pc_n[2]+intrinsics.cx,
-                         intrinsics.fy*pc_n[1]/pc_n[2]+intrinsics.cy],
-                        requires_grad=True)
-    return pt_n-pt
+# def residual_flow(intrinsics, T, Depth, pt):
+#     # BETTER to use KTDK'pt-pt as matrix multiple or by formulation as equations?
+#     pc = torch.tensor([(pt[0]-intrinsics.cx)*Depth/intrinsics.fx,
+#                        (pt[1]-intrinsics.cy)*Depth/intrinsics.fy,
+#                        Depth,
+#                        1],
+#                       requires_grad=True).to(device)
+#     pc_n = torch.matmul(T, pc)
+#     pt_n = torch.tensor([intrinsics.fx*pc_n[0]/pc_n[2]+intrinsics.cx,
+#                          intrinsics.fy*pc_n[1]/pc_n[2]+intrinsics.cy],
+#                         requires_grad=True)
+#     return pt_n-pt
 
 
 def compute_multi_scale_intrinsics(intrinsics, num_scales):
@@ -106,11 +108,12 @@ def compute_multi_scale_intrinsics(intrinsics, num_scales):
         fy = intrinsics[:, 1, 1]/(2**s)
         cx = intrinsics[:, 0, 2]/(2**s)
         cy = intrinsics[:, 1, 2]/(2**s)
-        zeros = torch.zeros(batch_size).float()
+        zeros = torch.zeros(batch_size).float().to(device)
         r1 = torch.stack([fx, zeros, cx], dim=1)  # shape: batch_size,3
         r2 = torch.stack([zeros, fy, cy], dim=1)  # shape: batch_size,3
         # shape: batch_size,3
-        r3 = torch.tensor([0., 0., 1.]).float().view(1, 3).repeat(batch_size, 1)
+        r3 = torch.tensor([0., 0., 1.]).float().view(
+            1, 3).repeat(batch_size, 1).to(device)
         # concat along the spatial row dimension
         scale_instrinsics = torch.stack([r1, r2, r3], dim=1)
         multi_scale_intrinsices.append(
@@ -120,6 +123,7 @@ def compute_multi_scale_intrinsics(intrinsics, num_scales):
 
 
 def euler2mat(z, y, x):
+    global device
     # TODO: eular2mat
     '''
     input shapes of z,y,x all are: (#batch)
@@ -130,8 +134,8 @@ def euler2mat(z, y, x):
     _y = y.clone().clamp(-math.pi, math.pi)
     _x = x.clone().clamp(-math.pi, math.pi)
 
-    ones = torch.ones(batch_size).type(torch.FloatTensor)
-    zeros = torch.zeros(batch_size).type(torch.FloatTensor)
+    ones = torch.ones(batch_size).float().to(device)
+    zeros = torch.zeros(batch_size).float().to(device)
 
     cosz = torch.cos(z)
     sinz = torch.sin(z)
@@ -163,6 +167,7 @@ def euler2mat(z, y, x):
 
 
 def pose_vec2mat(vec):
+    global device
     # TODO:pose vec 2 mat
     # input shape of vec: (#batch, 6)
     # shape: (#batch,3)
@@ -180,27 +185,27 @@ def pose_vec2mat(vec):
     batch_size = vec.shape[0]
     # shape: (#batch,1,4)
     fill = torch.tensor([0, 0, 0, 1]).type(
-        torch.FloatTensor).view(1, 4).repeat(batch_size, 1, 1)
+        torch.FloatTensor).view(1, 4).repeat(batch_size, 1, 1).to(device)
     # shape: (#batch,4,4)
     transform_mat = torch.cat((transform_mat, fill), dim=1)
     return transform_mat
 
 
 def meshgrid(height, width, is_homogeneous=True):
-    x = torch.ones(height).type(torch.FloatTensor).view(height, 1)
+    global device
+    x = torch.ones(height).float().view(height, 1).to(device)
     # shape : (h,w)
-    x = torch.matmul(x, torch.linspace(0, 1, width).view(1, width))
+    x = torch.matmul(x, torch.linspace(0, 1, width).view(1, width).to(device))
 
-    y = torch.linspace(0, 1, height).view(height, 1)
+    y = torch.linspace(0, 1, height).view(height, 1).to(device)
     # shape : (h,w)
-    y = torch.matmul(y, torch.ones(width).type(
-        torch.FloatTensor).view(1, width))
+    y = torch.matmul(y, torch.ones(width).float().view(1, width).to(device))
 
     x = x*(width-1)
     y = y*(height-1)
 
     if is_homogeneous:
-        ones = torch.ones(height, width)
+        ones = torch.ones(height, width).float().to(device)
         coords = torch.stack((x, y, ones), dim=2)  # shape: h,w,3
     else:
         coords = torch.stack((x, y), dim=2)  # shape: h,w,2
@@ -210,6 +215,7 @@ def meshgrid(height, width, is_homogeneous=True):
 
 
 def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
+    global device
     # TODO: compute rigid flow
     '''Compute the rigid flow from src view to tgt view 
 
@@ -235,36 +241,37 @@ def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
     tgt_coords = torch.matmul(intrinsics_inv, src_coords)
 
     # shape: (#batch, h*w,3,1)
-    _depth = depth.clone().view(batch_size,h*w).repeat(3, 1,1).permute(1, 2, 0).view(batch_size, h*w, 3, 1)
+    _depth = depth.clone().view(batch_size, h*w).repeat(3, 1,
+                                                        1).permute(1, 2, 0).view(batch_size, h*w, 3, 1)
 
     # point-wise multiplication : shape: (# batch, h*w,3,1)
     tgt_coords = _depth * tgt_coords
 
-    ones = torch.ones(batch_size, h*w, 1, 1).type(torch.FloatTensor)
+    ones = torch.ones(batch_size, h*w, 1, 1).float().to(device)
 
     # shape: (#batch, h*w,4,1)
     tgt_coords = torch.cat((tgt_coords, ones), dim=2)
 
     # shape: (#batch,h*w,4, 4)
-    pose_mat = pose_mat.repeat(h*w, 1,1,1).transpose(1, 0)
+    pose_mat = pose_mat.repeat(h*w, 1, 1, 1).transpose(1, 0)
 
     # shape: matmul((#batch,h*w,4,4),(#batch,h*w,4,1)) = (#batch,h*w,4,1) -> (#batch,h*w,3,1)
     tgt_coords = torch.matmul(pose_mat, tgt_coords)[:, :, :3, :]
 
     # shape: (#batch,h*w,3, 3)
-    intrinsics = intrinsics.repeat(h*w, 1,1,1).transpose(1, 0)
+    intrinsics = intrinsics.repeat(h*w, 1, 1, 1).transpose(1, 0)
 
     # shape: matmul((#batch,h*w,3,3),(#batch,h*w,3,1)) = (#batch,h*w,3,1)
     tgt_coords = torch.matmul(intrinsics, tgt_coords)
 
     # shape: (#batch,h*w,3,1)
-    src_coords = src_coords.repeat(batch_size, 1,1,1)
+    src_coords = src_coords.repeat(batch_size, 1, 1, 1)
     # shape: (#batch,h*w,3,1)
     rigid_flow = tgt_coords-src_coords
 
     # shape: (#batch,2,h,w)
     rigid_flow = rigid_flow[:, :, :2, :].contiguous().view(
-        batch_size, h, w, 2,1).squeeze_(-1).permute(0,3,1,2)
+        batch_size, h, w, 2, 1).squeeze_(-1).permute(0, 3, 1, 2)
     return rigid_flow
 
 
