@@ -6,6 +6,7 @@ import yaml
 def main():
     parser = argparse.ArgumentParser('description: GeoNet')
     parser.add_argument('--train',dest='train',action='store_true')
+    parser.add_argument('--train_flow', dest='train_flow', action='store_true')
     parser.add_argument('--test',dest='test',action='store_true')
     parser.add_argument('--config',type=str)
     args = parser.parse_args()
@@ -13,7 +14,7 @@ def main():
     with open(args.config,'r') as f:
         config = yaml.load(f)
     
-    geonet = GeoNetModel(config)
+    geonet = GeoNetModel(config,args.train_flow)
 
     if args.train:
         geonet.train()

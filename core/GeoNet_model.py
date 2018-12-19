@@ -17,15 +17,17 @@ n_iter = 0
 device = torch.device(
     'cuda') if torch.cuda.is_available() else torch.device('cpu')
 
+
 class GeoNetModel(object):
 
-    def __init__(self, config):
+    def __init__(self, config, train_flow):
         global device
         self.config = config
         self.num_source = config['sequence_length']-1
         self.batch_size = config['batch_size']
         self.num_scales = 4
-        self.simi_alpha = torch.tensor(config['alpha_recon_image']).float().to(device)
+        self.simi_alpha = torch.tensor(
+            config['alpha_recon_image']).float().to(device)
         self.geometric_consistency_alpha = torch.tensor(
             config['geometric_consistency_alpha']).float().to(device)
         self.geometric_consistency_beta = torch.tensor(
@@ -44,6 +46,7 @@ class GeoNetModel(object):
         self.epoch_size = config['epoch_size']
         self.log = '{}/log_{}'.format(config['log_dir'], time.time())
         self.output_log_freq = self.config['output_log_freq']
+        self.train_flow = train_flow
 
         ''' Data preparation
             TODO: transformation
@@ -198,7 +201,8 @@ class GeoNetModel(object):
             batch_size, _, h, w = self.resflow[s].shape
             # create a scale factor matrix for pointwise multiplication
             # NOTE: flow channels x,y
-            scale_factor = torch.tensor([w, h]).view(1, 2, 1, 1).float().to(device)
+            scale_factor = torch.tensor([w, h]).view(
+                1, 2, 1, 1).float().to(device)
             scale_factor = scale_factor.repeat(batch_size, 1, h, w)
             resflow_scaling.append(self.resflow[s]*scale_factor)
 
@@ -221,39 +225,40 @@ class GeoNetModel(object):
 
     def build_losses(self):
         # NOTE: geometrical consistency
+        if self.train_flow:
+            bwd2fwd_flow_pyramid = [flow_warp(self.bwd_full_flow_pyramid[s], self.fwd_full_flow_pyramid[s])
+                                    for s in range(self.num_scales)]
+            fwd2bwd_flow_pyramid = [flow_warp(self.fwd_full_flow_pyramid[s], self.bwd_full_flow_pyramid[s])
+                                    for s in range(self.num_scales)]
 
-        bwd2fwd_flow_pyramid = [flow_warp(self.bwd_full_flow_pyramid[s], self.fwd_full_flow_pyramid[s])
-                                for s in range(self.num_scales)]
-        fwd2bwd_flow_pyramid = [flow_warp(self.fwd_full_flow_pyramid[s], self.bwd_full_flow_pyramid[s])
-                                for s in range(self.num_scales)]
-
-        fwd_flow_diff_pyramid = [torch.abs(bwd2fwd_flow_pyramid[s]+self.fwd_full_flow_pyramid[s])
-                                 for s in range(self.num_scales)]
-        bwd_flow_diff_pyramid = [torch.abs(fwd2bwd_flow_pyramid[s]+self.bwd_full_flow_pyramid[s])
-                                 for s in range(self.num_scales)]
-
-        fwd_consist_bound_pyramid = [self.geometric_consistency_beta*self.fwd_full_flow_pyramid[s]*2**s
+            fwd_flow_diff_pyramid = [torch.abs(bwd2fwd_flow_pyramid[s]+self.fwd_full_flow_pyramid[s])
                                      for s in range(self.num_scales)]
-        bwd_consist_bound_pyramid = [self.geometric_consistency_beta*self.bwd_full_flow_pyramid[s]*2**s
+            bwd_flow_diff_pyramid = [torch.abs(fwd2bwd_flow_pyramid[s]+self.bwd_full_flow_pyramid[s])
                                      for s in range(self.num_scales)]
-        # stop gradient at maximum opeartions
-        fwd_consist_bound_pyramid = [torch.max(s, self.geometric_consistency_alpha).clone().detach()
-                                     for s in fwd_consist_bound_pyramid]
 
-        bwd_consist_bound_pyramid = [torch.max(s, self.geometric_consistency_alpha).clone().detach()
-                                     for s in bwd_consist_bound_pyramid]
+            fwd_consist_bound_pyramid = [self.geometric_consistency_beta*self.fwd_full_flow_pyramid[s]*2**s
+                                         for s in range(self.num_scales)]
+            bwd_consist_bound_pyramid = [self.geometric_consistency_beta*self.bwd_full_flow_pyramid[s]*2**s
+                                         for s in range(self.num_scales)]
+            # stop gradient at maximum opeartions
+            fwd_consist_bound_pyramid = [torch.max(s, self.geometric_consistency_alpha).clone().detach()
+                                         for s in fwd_consist_bound_pyramid]
 
-        fwd_mask_pyramid = [(fwd_flow_diff_pyramid[s]*2**s < fwd_consist_bound_pyramid[s]).float()
-                            for s in range(self.num_scales)]
-        bwd_mask_pyramid = [(bwd_flow_diff_pyramid[s]*2**s < bwd_consist_bound_pyramid[s]).float()
-                            for s in range(self.num_scales)]
+            bwd_consist_bound_pyramid = [torch.max(s, self.geometric_consistency_alpha).clone().detach()
+                                         for s in bwd_consist_bound_pyramid]
+
+            fwd_mask_pyramid = [(fwd_flow_diff_pyramid[s]*2**s < fwd_consist_bound_pyramid[s]).float()
+                                for s in range(self.num_scales)]
+            bwd_mask_pyramid = [(bwd_flow_diff_pyramid[s]*2**s < bwd_consist_bound_pyramid[s]).float()
+                                for s in range(self.num_scales)]
 
         # NOTE: loss
         self.loss_rigid_warp = 0
         self.loss_disp_smooth = 0
-        self.loss_full_warp = 0
-        self.loss_full_smooth = 0
-        self.loss_geometric_consistency = 0
+        if self.train_flow:
+            self.loss_full_warp = 0
+            self.loss_full_smooth = 0
+            self.loss_geometric_consistency = 0
 
         for s in range(self.num_scales):
 
@@ -266,25 +271,28 @@ class GeoNetModel(object):
                 smooth_loss(self.disparities[s], torch.cat(
                     (self.tgt_view_pyramid[s], self.src_views_pyramid[s]), dim=0))
 
-            self.loss_full_warp += self.loss_weight_full_warp*self.num_source/2 * \
-                (torch.mean(
-                    self.fwd_full_error_pyramid[s])+torch.mean(self.bwd_full_error_pyramid[s]))
+            if self.train_flow:
+                self.loss_full_warp += self.loss_weight_full_warp*self.num_source/2 * \
+                    (torch.mean(
+                        self.fwd_full_error_pyramid[s])+torch.mean(self.bwd_full_error_pyramid[s]))
 
-            self.loss_full_smooth += self.loss_weigtht_full_smooth/2**(s+1) *\
-                (flow_smooth_loss(
-                    self.fwd_full_flow_pyramid[s], self.tgt_view_tile_pyramid[s]) +
-                    flow_smooth_loss(self.bwd_full_flow_pyramid[s], self.src_views_pyramid[s]))
+                self.loss_full_smooth += self.loss_weigtht_full_smooth/2**(s+1) *\
+                    (flow_smooth_loss(
+                        self.fwd_full_flow_pyramid[s], self.tgt_view_tile_pyramid[s]) +
+                        flow_smooth_loss(self.bwd_full_flow_pyramid[s], self.src_views_pyramid[s]))
 
-            self.loss_geometric_consistency += self.loss_weight_geometrical_consistency/2*(
-                torch.sum(torch.mean(
-                    fwd_flow_diff_pyramid[s], 1, True)*fwd_mask_pyramid[s])
-                / torch.mean(fwd_mask_pyramid[s])
-                + torch.sum(torch.mean(
-                    bwd_flow_diff_pyramid[s], 1, True)*bwd_mask_pyramid[s])
-                / torch.mean(bwd_mask_pyramid[s]))
+                self.loss_geometric_consistency += self.loss_weight_geometrical_consistency/2*(
+                    torch.sum(torch.mean(
+                        fwd_flow_diff_pyramid[s], 1, True)*fwd_mask_pyramid[s])
+                    / torch.mean(fwd_mask_pyramid[s])
+                    + torch.sum(torch.mean(
+                        bwd_flow_diff_pyramid[s], 1, True)*bwd_mask_pyramid[s])
+                    / torch.mean(bwd_mask_pyramid[s]))
 
-        self.loss_total = self.loss_rigid_warp+self.loss_disp_smooth + \
-            self.loss_full_warp+self.loss_full_smooth+self.loss_geometric_consistency
+        self.loss_total = self.loss_rigid_warp+self.loss_disp_smooth
+        if self.train_flow:
+            self.loss_total += self.loss_full_warp + \
+                self.loss_full_smooth + self.loss_geometric_consistency
 
     def training_inside_epoch(self):
         global n_iter
@@ -294,16 +302,20 @@ class GeoNetModel(object):
         losses = AverageMeter(precision=4)
 
         end = time.time()
-
+        
         for i, sampled_batch in enumerate(self.train_loader):
+            # for name, param in self.disp_net.named_parameters():
+            #     if param.requires_grad:
+            #         print(name, param.data)
             data_time.update(time.time()-end)
             self.iter_data_preparation(sampled_batch)
 
             self.build_dispnet()
             self.build_posenet()
             self.build_rigid_warp_flow()
-            self.build_flownet()
-            self.build_full_warp_flow()
+            if self.train_flow:
+                self.build_flownet()
+                self.build_full_warp_flow()
             self.build_losses()
 
             self.optimizer.zero_grad()
@@ -319,9 +331,13 @@ class GeoNetModel(object):
             #  write
             with open(self.log, 'a') as csvfile:
                 writer = csv.writer(csvfile, delimiter='\t')
-                writer.writerow([self.loss_total.item(), self.loss_rigid_warp.item(),
-                                 self.loss_disp_smooth.item(), self.loss_full_warp.item(),
-                                 self.loss_full_smooth.item(), self.loss_geometric_consistency.item()])
+                if self.train_flow:
+                    writer.writerow([self.loss_total.item(), self.loss_rigid_warp.item(),
+                                    self.loss_disp_smooth.item(), self.loss_full_warp.item(),
+                                    self.loss_full_smooth.item(), self.loss_geometric_consistency.item()])
+                else:
+                    writer.writerow([self.loss_total.item(), self.loss_rigid_warp.item(),
+                                     self.loss_disp_smooth.item()])
             self.train_logger.train_bar.update(i+1)
             if i % self.output_log_freq == 0:
                 self.train_logger.train_writer.write(

@@ -1,2 +1,24 @@
 # GeoNet_pytorch
-An implementation of GeoNet by Pytorch(1.0)
+This is an unofficial pytorch implementation of the paper:
+
+GeoNet: Unsupervised Learning of Dense Depth, Optical Flow and Camera Pose (CVPR 2018)
+
+Zhichao Yin and Jianping Shi
+
+arxiv preprint: (https://arxiv.org/abs/1803.02276)
+
+# Requirements
+Build on:
+python3.5 / 3.7
+PyTorch 1.0 stable
+CUDA 9.0
+Ubuntu 16.04 / CentOS 7
+
+# Training
+This code follows the GeoNet authors stage-wise training as:
+1. "train_rigid" mode: Train depth and pose task with rigid warp loss, smooth loss
+2. "train_flow" mode: Fine tune depth and pose with ResFlowNet with rigid warp loss, rigid smooth loss, fully warp loss, fully flow smooth loss and geometry consistency loss
+## "train_rigid" mode
+training on the disp_net and pose_net
+## "train_flow" mode
+
