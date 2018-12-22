@@ -63,9 +63,12 @@ def DSSIM(x, y):
     avepooling2d = torch.nn.AvgPool2d(3, stride=1, padding=[1, 1])
     mu_x = avepooling2d(x)
     mu_y = avepooling2d(y)
-    sigma_x = avepooling2d((x-mu_x)**2)
-    sigma_y = avepooling2d((y-mu_y)**2)
-    sigma_xy = avepooling2d((x-mu_x)*(y-mu_y))
+    # sigma_x = avepooling2d((x-mu_x)**2)
+    # sigma_y = avepooling2d((y-mu_y)**2)
+    # sigma_xy = avepooling2d((x-mu_x)*(y-mu_y))
+    sigma_x = avepooling2d(x**2)-mu_x**2
+    sigma_y = avepooling2d(y**2)-mu_y**2
+    sigma_xy = avepooling2d(x*y)-mu_x*mu_y
     k1_square = 0.01**2
     k2_square = 0.03**2
     # L_square = 255**2
@@ -216,7 +219,6 @@ def meshgrid(height, width, is_homogeneous=True):
 
 def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
     global device
-    # TODO: compute rigid flow
     '''Compute the rigid flow from src view to tgt view 
 
         input shapes:
@@ -236,13 +238,12 @@ def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
     # shape: (#h*w,3,1)
     src_coords = meshgrid(h, w, True).contiguous().view(h*w, 3, 1)
 
-    # debug:
     # shape: matmul( (#batch,1,3,3) ,(h*w,3,1)) = (#batch,h*w,3,1)
     tgt_coords = torch.matmul(intrinsics_inv, src_coords)
 
     # shape: (#batch, h*w,3,1)
-    _depth = depth.clone().view(batch_size, h*w).repeat(3, 1,
-                                                        1).permute(1, 2, 0).view(batch_size, h*w, 3, 1)
+    _depth = depth.view(batch_size, h*w).repeat(3, 1,
+                                                        1).permute(1, 2, 0).unsqueeze_(3)
 
     # point-wise multiplication : shape: (# batch, h*w,3,1)
     tgt_coords = _depth * tgt_coords
@@ -267,16 +268,26 @@ def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
     # shape: (#batch,h*w,3,1)
     src_coords = src_coords.repeat(batch_size, 1, 1, 1)
     # shape: (#batch,h*w,3,1)
-    rigid_flow = tgt_coords-src_coords
-
+    # rigid_flow = tgt_coords-src_coords
+    # shape: (#batch,h*w,2)
+    tgt_depth = tgt_coords[:, :, 2, :].clone().repeat(1,1,2) # require grad but also require modify (repeat) here
+    # shape: (#batch,h*w,2)
+    tgt_coords = tgt_coords[:, :, :2, :].squeeze_(-1)/tgt_depth
+    
+    # shape: (#batch, h*w,2)
+    # from IPython import embed
+    # embed()
+    normalizer = torch.tensor([(2./w),(2./h)]).repeat(batch_size,h*w,1).float().to(device)
+    tgt_coords = tgt_coords*normalizer-1.
+    tgt_coords = tgt_coords.contiguous().view(batch_size,h,w,2).permute(0,3,1,2)
     # shape: (#batch,2,h,w)
-    rigid_flow = rigid_flow[:, :, :2, :].contiguous().view(
-        batch_size, h, w, 2, 1).squeeze_(-1).permute(0, 3, 1, 2)
-    return rigid_flow
+    # rigid_flow = rigid_flow[:, :, :2, :].contiguous().view(
+    #     batch_size, h, w, 2, 1).squeeze_(-1).permute(0, 3, 1, 2)
+    return tgt_coords
 
 
 def flow_warp(src_img, src2tgt_flow):
     # TODO: flow warp
-    flow_field = src2tgt_flow.clone().permute(0, 2, 3, 1)
+    flow_field = src2tgt_flow.permute(0, 2, 3, 1)
     tgt_img = F.grid_sample(src_img, flow_field)
     return tgt_img

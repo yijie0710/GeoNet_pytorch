@@ -29,7 +29,11 @@ class PoseNet(nn.Module):
         self.pred_poses = nn.Conv2d(256,6*self.num_source,kernel_size=1,padding=0) #1/128 shapes: bs,chnls,h,w
 
     def init_weight(self):
-        pass
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                xavier_normal_(m.weight)
+                if m.bias is not None:
+                    zeros_(m.bias)
     
     def forward(self,x):
         

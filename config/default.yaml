@@ -27,8 +27,9 @@ beta: 0.999
 weight_decay: 0.9
 epoch: 1000
 flow_scale_factor: 0.1
+num_scales: 4
 
-alpha_recon_image: 0.5
+alpha_recon_image: 0.85
 lambda_rw: 1
 lambda_ds: 0.5
 lambda_fw: 1

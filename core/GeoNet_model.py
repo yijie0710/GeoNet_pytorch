@@ -12,6 +12,7 @@ from utils import *
 from logger import *
 import time
 import csv
+from tensorboardX import SummaryWriter
 
 n_iter = 0
 device = torch.device(
@@ -25,7 +26,7 @@ class GeoNetModel(object):
         self.config = config
         self.num_source = config['sequence_length']-1
         self.batch_size = config['batch_size']
-        self.num_scales = 4
+        self.num_scales = torch.tensor(config['num_scales'])
         self.simi_alpha = torch.tensor(
             config['alpha_recon_image']).float().to(device)
         self.geometric_consistency_alpha = torch.tensor(
@@ -65,6 +66,13 @@ class GeoNetModel(object):
             self.disp_net.cuda()
             self.pose_net.cuda()
             self.flow_net.cuda()
+
+        if not self.train_flow:
+            self.disp_net.init_weight()
+            self.pose_net.init_weight()
+        self.disp_net = torch.nn.DataParallel(self.disp_net)
+        self.pose_net = torch.nn.DataParallel(self.pose_net)
+        
 
         self.nets = {'disp': self.disp_net,
                      'pose': self.pose_net,
@@ -169,7 +177,10 @@ class GeoNetModel(object):
                                         for scale in range(self.num_scales)]
         self.bwd_rigid_error_pyramid = [image_similarity(self.simi_alpha, self.src_views_pyramid[scale], self.bwd_rigid_warp_pyramid[scale])
                                         for scale in range(self.num_scales)]
-
+        # from IPython import embed
+        # from matplotlib import pyplot as plt
+        # embed()
+        
     def build_flownet(self):
 
         # output residual flow
@@ -251,7 +262,9 @@ class GeoNetModel(object):
                                 for s in range(self.num_scales)]
             bwd_mask_pyramid = [(bwd_flow_diff_pyramid[s]*2**s < bwd_consist_bound_pyramid[s]).float()
                                 for s in range(self.num_scales)]
-
+        # from IPython import embed
+        # from matplotlib import pyplot as plt
+        # embed()
         # NOTE: loss
         self.loss_rigid_warp = 0
         self.loss_disp_smooth = 0
@@ -272,9 +285,13 @@ class GeoNetModel(object):
                     (self.tgt_view_pyramid[s], self.src_views_pyramid[s]), dim=0))
 
             if self.train_flow:
-                self.loss_full_warp += self.loss_weight_full_warp*self.num_source/2 * \
-                    (torch.mean(
-                        self.fwd_full_error_pyramid[s])+torch.mean(self.bwd_full_error_pyramid[s]))
+                self.loss_full_warp += self.loss_weight_full_warp*self.num_source/2 * (
+                    torch.sum(torch.mean(
+                        fwd_full_error_pyramid[s], 1, True)*fwd_mask_pyramid[s])
+                    / torch.mean(fwd_mask_pyramid[s])
+                    + torch.sum(torch.mean(
+                        bwd_full_error_pyramid[s], 1, True)*bwd_mask_pyramid[s])
+                    / torch.mean(bwd_mask_pyramid[s]))
 
                 self.loss_full_smooth += self.loss_weigtht_full_smooth/2**(s+1) *\
                     (flow_smooth_loss(
@@ -306,7 +323,10 @@ class GeoNetModel(object):
         for i, sampled_batch in enumerate(self.train_loader):
             # for name, param in self.disp_net.named_parameters():
             #     if param.requires_grad:
-            #         print(name, param.data)
+            #         print(name, torch.mean(param.data))
+            # for name, param in self.pose_net.named_parameters():
+            #     if param.requires_grad:
+            #         print(name, torch.mean(param.data))
             data_time.update(time.time()-end)
             self.iter_data_preparation(sampled_batch)
 
@@ -349,6 +369,9 @@ class GeoNetModel(object):
 
     def train(self):
         global n_iter
+        if not self.train_flow:
+            self.pose_net.train()
+            self.disp_net.train()
 
         self.train_set = SequenceFolder(
             self.config['data'],

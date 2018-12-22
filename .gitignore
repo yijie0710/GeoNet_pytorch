@@ -21,3 +21,16 @@ core/__pycache__/sequence_folders.cpython-35.pyc
 data/__pycache__/kitti_odom_loader.cpython-35.pyc
 .gitignore
 .vscode/settings.json
+.vscode/settings.json
+core/__pycache__/utils.cpython-37.pyc
+core/__pycache__/DispNet.cpython-37.pyc
+core/__pycache__/FlowNet.cpython-37.pyc
+core/__pycache__/GeoNet_model.cpython-37.pyc
+core/__pycache__/PoseNet.cpython-37.pyc
+core/__pycache__/logger.cpython-37.pyc
+core/__pycache__/loss_functions.cpython-37.pyc
+core/__pycache__/sequence_folders.cpython-37.pyc
+.vscode/settings.json
+.vscode/settings.json
+.gitignore
+.vscode/settings.json
