@@ -266,6 +266,8 @@ def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
     tgt_coords = torch.matmul(intrinsics, tgt_coords)
 
     # shape: (#batch,h*w,3,1)
+    print(src_coords.shape)
+    print(batch_size)
     src_coords = src_coords.repeat(batch_size, 1, 1, 1)
     # shape: (#batch,h*w,3,1)
     # rigid_flow = tgt_coords-src_coords

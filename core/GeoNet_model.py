@@ -165,7 +165,6 @@ class GeoNetModel(object):
                     self.poses[:, src, :],
                     self.depth[scale][:self.batch_size, :, :],
                     self.multi_scale_intrinsices[:, scale, :, :], False)
-
                 bwd_rigid_flow = compute_rigid_flow(
                     self.poses[:, src, :],
                     self.depth[scale][self.batch_size * (
@@ -450,7 +449,7 @@ class GeoNetModel(object):
                     'disp_net_state_dict': self.disp_net.state_dict(),
                     'pose_net_state_dict': self.pose_net.state_dict(),
                     'loss': self.loss_total
-                }, self.config['ckpt_dir'])
+                }, path)
             if i >= self.epoch_size - 1:
                 break
 
@@ -474,7 +473,7 @@ class GeoNetModel(object):
         self.val_set = SequenceFolder(
             self.config['data'],
             transform=None,
-            split='val',
+            split='min_val',
             seed=self.config['seed'],
             img_height=self.config['img_height'],
             img_width=self.config['img_width'],
@@ -492,6 +491,7 @@ class GeoNetModel(object):
             self.val_set,
             shuffle=True,
             batch_size=1,
+            drop_last=True,
             num_workers=self.config['data_workers'],
             pin_memory=False)
 
@@ -508,7 +508,7 @@ class GeoNetModel(object):
         self.logger = TermLogger(
             n_epochs=self.config['epoch'],
             train_size=min(len(self.train_loader), self.config['epoch_size']),
-            valid_size=len(val_loader))
+            valid_size=len(self.val_loader))
         self.logger.epoch_bar.start()
 
         for epoch in range(self.epochs):
@@ -547,6 +547,8 @@ class GeoNetModel(object):
             self.iter_data_preparation(sampled_batch)
             self.build_dispnet()
             self.build_posenet()
+            from IPython import embed
+            embed()
             self.build_rigid_warp_flow()
             if self.train_flow:
                 self.build_flownet()

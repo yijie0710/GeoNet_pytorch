@@ -10,5 +10,8 @@ Todo:
     ✔   validation loss @done(18-12-24 21:40)
     ✔   validation bar @done(18-12-24 22:11)
     ✔   validation log -> as training surveillance @done(18-12-24 22:16)
+  ☐ Test validation
+  ☐ Test save ckpt
+  ☐ Test training from pretrained weights
 
   

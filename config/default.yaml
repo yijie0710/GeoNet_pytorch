@@ -17,7 +17,7 @@ iter: 10000
 cuda: False
 batch_size: 4
 save_ckpt_iter: 200
-output_log_iter: 200
+save_log_iter: 200
 epochs: 1000
 epoch_size: 100
 seed: 8964
