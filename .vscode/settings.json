@@ -1,4 +1,6 @@
 {
     "workbench.iconTheme": "vscode-icons",
-    "workbench.colorTheme": "GitHub Plus"
+    "workbench.colorTheme": "GitHub Plus",
+    "python.formatting.provider": "yapf",
+    "python.linting.pylintEnabled": true
 }

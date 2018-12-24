@@ -58,12 +58,12 @@ class SequenceFolder(data.Dataset):
         transform functions must take in a list a images and a numpy array (usually intrinsics matrix)
     """
 
-    def __init__(self, root, seed, train, sequence_length, img_width, img_height, transform=None, target_transform=None):
+    def __init__(self, root, seed, split, sequence_length, img_width, img_height, transform=None, target_transform=None):
         np.random.seed(seed)
         random.seed(seed)
         self.root = root
 
-        self.split = 'min_train' if train else 'val'
+        self.split = split
         self.example_names = [name.split('\n')[0].split('/')[-1] for name in open(
             '{}/{}.txt'.format(self.root, self.split))]
         # self.data_folder = '{}/{}'.format(self.root, self.split)

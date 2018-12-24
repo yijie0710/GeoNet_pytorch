@@ -76,8 +76,12 @@ class FlowNet(nn.Module):
         self.alpha = flow_scale_factor
         self.beta = 0
     
-    def init_weights(self):
-        pass
+    def init_weight(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+                xavier_normal_(m.weight)
+                if m.bias is not None:
+                    zeros_(m.bias)
     
     def forward(self,x):
         #encode
