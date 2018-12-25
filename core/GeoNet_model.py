@@ -13,7 +13,7 @@ from logger import *
 import time
 import csv
 import os
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
 import custom_transforms
 
 n_iter = 0
