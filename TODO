@@ -3,15 +3,15 @@ Todo:
   ✔  save checkpoint @started(18-12-24 19:54) @done(18-12-24 20:07) @lasted(13m41s)
   ✔  load checkpoint to continue the training of pose net and depth net @done(18-12-24 20:16)
   ✔  load checkpoint to begin the training of flow net @started(18-12-24 20:07) @done(18-12-24 20:16) @lasted(9m34s)
-  ☐  inference @started(18-12-24 20:17)
-  ☐  load checkpoint for inference
-  ☐  data augementation
+  ☐  inference 
+  ☐  test
+  ✔  data augementation @started(18-12-25 09:58) @done(18-12-25 10:11) @lasted(13m41s) copy from sfmlearner_pytorch
   ✔  validate without gt @started(18-12-24 21:35) @done(18-12-24 22:16) @lasted(41m26s)
     ✔   validation loss @done(18-12-24 21:40)
     ✔   validation bar @done(18-12-24 22:11)
     ✔   validation log -> as training surveillance @done(18-12-24 22:16)
-  ☐ Test validation
-  ☐ Test save ckpt
-  ☐ Test training from pretrained weights
+  ✔ Test validation @done(18-12-25 09:28)
+  ✔ Test save ckpt @done(18-12-25 09:29)
+  ✔ Test training from pretrained weights @done(18-12-25 09:55)
 
   

@@ -10,7 +10,8 @@ img_width: 416
 
 # Training
 ckpt_dir: /home/yijie/exper/geonet/20181215/ckpt
-ckpt_path: None
+ckpt_path: /home/yijie/exper/geonet/20181215/ckpt/rigid_0
+# ckpt_path: None
 log_dir: /home/yijie/exper/geonet/20181215/log
 learning_rate: 0.0002
 iter: 10000

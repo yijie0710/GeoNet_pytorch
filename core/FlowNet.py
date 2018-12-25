@@ -132,9 +132,6 @@ class FlowNet(nn.Module):
         out_iconv1 = self.iconv1(concat1) 
         out_flow1 = self.alpha*self.flow1(out_iconv1)+self.beta
 
-        if self.training:
-            return out_flow1, out_flow2, out_flow3, out_flow4
-        else:
-            return out_flow1
+        return out_flow1, out_flow2, out_flow3, out_flow4
 
 ###################Test###################

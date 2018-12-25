@@ -141,9 +141,8 @@ class DispNet(nn.Module):
         out_iconv1 = self.iconv1(concat1)
         out_disp1 = self.alpha*self.disp1(out_iconv1)+self.beta
 
-        if self.training:
-            return out_disp1, out_disp2, out_disp3, out_disp4
-        else:
-            return out_disp1
+   
+        return out_disp1, out_disp2, out_disp3, out_disp4
+       
 
 ###################Test###################

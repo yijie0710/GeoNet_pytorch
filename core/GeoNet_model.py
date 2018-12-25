@@ -14,6 +14,7 @@ import time
 import csv
 import os
 from tensorboardX import SummaryWriter
+import custom_transforms
 
 n_iter = 0
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device(
@@ -52,7 +53,6 @@ class GeoNetModel(object):
         ''' Data preparation
             TODO: transformation
         '''
-        self.data_transform = None
         '''Nets preparation
         '''
         self.disp_net = DispNet.DispNet()
@@ -80,8 +80,10 @@ class GeoNetModel(object):
                 else:
                     self.flow_net.init_weight()
 
-        self.disp_net = torch.nn.DataParallel(self.disp_net)
-        self.pose_net = torch.nn.DataParallel(self.pose_net)
+        # for multiple GPUs
+        # TODO: load pretrained weights saved with DataParallel
+        # self.disp_net = torch.nn.DataParallel(self.disp_net)
+        # self.pose_net = torch.nn.DataParallel(self.pose_net)
 
         self.nets = {
             'disp': self.disp_net,
@@ -205,9 +207,6 @@ class GeoNetModel(object):
                              self.bwd_rigid_warp_pyramid[scale])
             for scale in range(self.num_scales)
         ]
-        # from IPython import embed
-        # from matplotlib import pyplot as plt
-        # embed()
 
     def build_flownet(self):
 
@@ -457,13 +456,25 @@ class GeoNetModel(object):
 
     def train(self):
         global n_iter
+
         if not self.train_flow:
             self.pose_net.train()
             self.disp_net.train()
 
+        normalize = custom_transforms.Normalize(mean=[0.5, 0.5, 0.5],
+                                            std=[0.5, 0.5, 0.5])
+        train_transform = custom_transforms.Compose([
+            custom_transforms.RandomHorizontalFlip(),
+            custom_transforms.RandomScaleCrop(),
+            custom_transforms.ArrayToTensor(),
+            normalize
+        ])
+
+        valid_transform = custom_transforms.Compose([custom_transforms.ArrayToTensor(), normalize])
+
         self.train_set = SequenceFolder(
             self.config['data'],
-            transform=self.data_transform,
+            transform=train_transform,
             split='min_train',
             seed=self.config['seed'],
             img_height=self.config['img_height'],
@@ -472,7 +483,7 @@ class GeoNetModel(object):
 
         self.val_set = SequenceFolder(
             self.config['data'],
-            transform=None,
+            transform=valid_transform,
             split='min_val',
             seed=self.config['seed'],
             img_height=self.config['img_height'],
@@ -490,7 +501,7 @@ class GeoNetModel(object):
         self.val_loader = torch.utils.data.DataLoader(
             self.val_set,
             shuffle=True,
-            batch_size=1,
+            batch_size=self.config['batch_size'],
             drop_last=True,
             num_workers=self.config['data_workers'],
             pin_memory=False)
@@ -516,14 +527,23 @@ class GeoNetModel(object):
             self.logger.reset_train_bar()
             epoch_train_loss = self.training_inside_epoch()
             self.logger.train_writer.write(
-                ' * Avg Loss : {:.3f}'.format(epoch_train_loss))
+                ' training * Avg Loss : {:.3f}'.format(epoch_train_loss))
 
             self.logger.reset_valid_bar()
             epoch_val_loss = self.validate_inside_epoch_without_gt()
             self.logger.valid_writer.write(
-                ' * Avg Loss : {:.3f}'.format(epoch_val_loss))
+                ' validation * Avg Loss : {:.3f}'.format(epoch_val_loss))
+    
+    @torch.no_grad()
+    def test_depth(self):
+        pass
+    
+    @torch.no_grad()
+    def test_pose(self):
+        pass 
 
-    def test(self):
+    @torch.no_grad()
+    def test_flow(self):
         pass
 
     @torch.no_grad()
@@ -540,15 +560,13 @@ class GeoNetModel(object):
         self.pose_net.eval()
         if self.train_flow:
             self.flow_net.eval()
-        
+
         for i, sampled_batch in enumerate(self.val_loader):
-            data_time = time.time()-end
+            data_time.update(time.time() - end)
             start_time = time.time()
             self.iter_data_preparation(sampled_batch)
             self.build_dispnet()
             self.build_posenet()
-            from IPython import embed
-            embed()
             self.build_rigid_warp_flow()
             if self.train_flow:
                 self.build_flownet()
@@ -556,8 +574,8 @@ class GeoNetModel(object):
             self.build_losses()
 
             losses.update(self.loss_total)
-            batch_time.update(time.time()-end)
-            data_time.update(data_time)
+            batch_time.update(time.time() - end)
+            
             end = time.time()
 
             with open(self.log, 'a') as csvfile:
@@ -577,7 +595,7 @@ class GeoNetModel(object):
                         self.loss_rigid_warp.item(),
                         self.loss_disp_smooth.item()
                     ])
-            self.logger.val_writer.write(
+            self.logger.valid_writer.write(
                 'Train: Time {} Data {} Loss {}'.format(
                     batch_time, data_time, losses))
 
