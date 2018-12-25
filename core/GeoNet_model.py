@@ -355,10 +355,10 @@ class GeoNetModel(object):
             if self.train_flow:
                 self.loss_full_warp += self.loss_weight_full_warp * self.num_source / 2 * (
                     torch.sum(
-                        torch.mean(fwd_full_error_pyramid[s], 1, True) *
+                        torch.mean(self.fwd_full_error_pyramid[s], 1, True) *
                         fwd_mask_pyramid[s]) / torch.mean(fwd_mask_pyramid[s])
                     + torch.sum(
-                        torch.mean(bwd_full_error_pyramid[s], 1, True) *
+                        torch.mean(self.bwd_full_error_pyramid[s], 1, True) *
                         bwd_mask_pyramid[s]) / torch.mean(bwd_mask_pyramid[s]))
 
                 self.loss_full_smooth += self.loss_weigtht_full_smooth/2**(s+1) *\

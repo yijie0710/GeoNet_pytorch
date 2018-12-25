@@ -13,5 +13,6 @@ Todo:
   ✔ Test validation @done(18-12-25 09:28)
   ✔ Test save ckpt @done(18-12-25 09:29)
   ✔ Test training from pretrained weights @done(18-12-25 09:55)
+  ☐ train flow
 
   
