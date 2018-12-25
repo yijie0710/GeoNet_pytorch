@@ -10,16 +10,16 @@ img_width: 416
 
 # Training
 ckpt_dir: /home/yijie/exper/geonet/20181215/ckpt
-ckpt_path: /home/yijie/exper/geonet/20181215/ckpt/rigid_0
-# ckpt_path: None
+# ckpt_path: /home/yijie/exper/geonet/20181215/ckpt/rigid_0
+ckpt_path: None
 log_dir: /home/yijie/exper/geonet/20181215/log
 learning_rate: 0.0002
-iter: 10000
+iter: 200000
 cuda: False
 batch_size: 4
 save_ckpt_iter: 200
 save_log_iter: 200
-epochs: 1000
+epochs: 30
 epoch_size: 100
 seed: 8964
 dispnet_encoder: 'VGG-16'

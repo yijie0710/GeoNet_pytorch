@@ -237,24 +237,24 @@ class GeoNetModel(object):
     def build_full_warp_flow(self):
         # unnormalize the pyramid flow back to pixel metric
         resflow_scaling = []
-        for s in range(self.num_scales):
-            batch_size, _, h, w = self.resflow[s].shape
-            # create a scale factor matrix for pointwise multiplication
-            # NOTE: flow channels x,y
-            scale_factor = torch.tensor([w, h]).view(1, 2, 1,
-                                                     1).float().to(device)
-            scale_factor = scale_factor.repeat(batch_size, 1, h, w)
-            resflow_scaling.append(self.resflow[s] * scale_factor)
+        # for s in range(self.num_scales):
+        #     batch_size, _, h, w = self.resflow[s].shape
+        #     # create a scale factor matrix for pointwise multiplication
+        #     # NOTE: flow channels x,y
+        #     scale_factor = torch.tensor([w, h]).view(1, 2, 1,
+        #                                              1).float().to(device)
+        #     scale_factor = scale_factor.repeat(batch_size, 1, h, w)
+        #     resflow_scaling.append(self.resflow[s] * scale_factor)
 
-        self.resflow = resflow_scaling
+        # self.resflow = resflow_scaling
 
         self.fwd_full_flow_pyramid = [
-            self.resflow[s][:self.batch_size * self.num_source] +
-            self.fwd_rigid_flow_pyramid[s] for s in range(self.num_scales)
+            self.resflow[s][:self.batch_size * self.num_source,:,:,:] +
+            self.fwd_rigid_flow_pyramid[s][:,:,:,:] for s in range(self.num_scales)
         ]
         self.bwd_full_flow_pyramid = [
-            self.resflow[s][self.batch_size * self.num_source:] +
-            self.bwd_rigid_flow_pyramid[s] for s in range(self.num_scales)
+            self.resflow[s][:self.batch_size * self.num_source,:,:,:] +
+            self.bwd_rigid_flow_pyramid[s][:,:,:,:] for s in range(self.num_scales)
         ]
 
         self.fwd_full_warp_pyramid = [
@@ -373,9 +373,10 @@ class GeoNetModel(object):
                     + torch.sum(
                         torch.mean(bwd_flow_diff_pyramid[s], 1, True) *
                         bwd_mask_pyramid[s]) / torch.mean(bwd_mask_pyramid[s]))
-
+        print('rigid warp: {} disp smooth: {}'.format(self.loss_rigid_warp,self.loss_disp_smooth))
         self.loss_total = self.loss_rigid_warp + self.loss_disp_smooth
         if self.train_flow:
+            print('full warp: {} full_smooth: {}, geo_con:{}'.format(self.loss_full_warp,self.loss_full_smooth,self.loss_geometric_consistency))
             self.loss_total += self.loss_full_warp + \
                 self.loss_full_smooth + self.loss_geometric_consistency
 
@@ -475,7 +476,7 @@ class GeoNetModel(object):
         self.train_set = SequenceFolder(
             self.config['data'],
             transform=train_transform,
-            split='min_train',
+            split='train',
             seed=self.config['seed'],
             img_height=self.config['img_height'],
             img_width=self.config['img_width'],
@@ -484,7 +485,7 @@ class GeoNetModel(object):
         self.val_set = SequenceFolder(
             self.config['data'],
             transform=valid_transform,
-            split='min_val',
+            split='val',
             seed=self.config['seed'],
             img_height=self.config['img_height'],
             img_width=self.config['img_width'],

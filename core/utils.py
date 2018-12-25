@@ -264,29 +264,43 @@ def compute_rigid_flow(pose, depth, intrinsics, reverse_pose):
     # shape: matmul((#batch,h*w,3,3),(#batch,h*w,3,1)) = (#batch,h*w,3,1)
     tgt_coords = torch.matmul(intrinsics, tgt_coords)
 
-    # shape: (#batch,h*w,3,1)
-    src_coords = src_coords.repeat(batch_size, 1, 1, 1)
+    # shape: (#batch,h*w,2)
+    src_coords = src_coords.repeat(batch_size, 1, 1, 1).squeeze_(-1)[:,:,:2]
     # shape: (#batch,h*w,3,1)
     # rigid_flow = tgt_coords-src_coords
     # shape: (#batch,h*w,2)
     tgt_depth = tgt_coords[:, :, 2, :].clone().repeat(1,1,2) # require grad but also require modify (repeat) here
     # shape: (#batch,h*w,2)
     tgt_coords = tgt_coords[:, :, :2, :].squeeze_(-1)/tgt_depth
-    
-    # shape: (#batch, h*w,2)
-    # from IPython import embed
-    # embed()
-    normalizer = torch.tensor([(2./w),(2./h)]).repeat(batch_size,h*w,1).float().to(device)
-    tgt_coords = tgt_coords*normalizer-1.
-    tgt_coords = tgt_coords.contiguous().view(batch_size,h,w,2).permute(0,3,1,2)
-    # shape: (#batch,2,h,w)
-    # rigid_flow = rigid_flow[:, :, :2, :].contiguous().view(
-    #     batch_size, h, w, 2, 1).squeeze_(-1).permute(0, 3, 1, 2)
-    return tgt_coords
 
+    # shape: (#batch,h*w,2)
+    rigid_flow = tgt_coords-src_coords
+    # shape: (#batch,2,h,w)
+    rigid_flow = rigid_flow.contiguous().view(batch_size,h,w,2).permute(0,3,1,2)
+    return rigid_flow
+
+def flow_to_tgt_coords(src2tgt_flow):
+
+    # shape: (#batch,2,h,w)
+    batch_size, _,h,w = src2tgt_flow.shape
+    
+    # shape: (#batch,h,w,2)
+    src2tgt_flow = src2tgt_flow.clone().permute(0,2,3,1)
+
+    # shape: (#batch,h,w,2)
+    src_coords = meshgrid(h, w, False).repeat(batch_size,1,1,1)
+
+    tgt_coords = src_coords+src2tgt_flow
+
+    normalizer = torch.tensor([(2./w),(2./h)]).repeat(batch_size,h,w,1).float().to(device)
+    # shape: (#batch,h,w,2)
+    tgt_coords = tgt_coords*normalizer-1
+
+    # shape: (#batch,h,w,2)
+    return tgt_coords
 
 def flow_warp(src_img, src2tgt_flow):
     # TODO: flow warp
-    flow_field = src2tgt_flow.permute(0, 2, 3, 1)
-    tgt_img = F.grid_sample(src_img, flow_field)
+    tgt_coords = flow_to_tgt_coords(src2tgt_flow)
+    tgt_img = F.grid_sample(src_img, tgt_coords)
     return tgt_img
