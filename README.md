@@ -21,7 +21,7 @@ This code follows the GeoNet authors stage-wise training as:
 1. "train_rigid" mode: Train DispNet and PoseNe with rigid warp loss, smooth loss
 2. "train_flow" mode: Fine tune/fix DispNet and PoseNet and train FlowNet with rigid warp loss, rigid smooth loss, fully warp loss, fully flow smooth loss and geometry consistency loss
 
-#TODO
+# TODO
 This repository is still work on progress and here are the todos:
 - [ ] validation functions with ground truth
 - [ ] test functions for depth, pose and optical flow
