@@ -29,5 +29,5 @@ This repository is still work on progress and here are the todos:
 - [ ] debugging and experiments
 
 
-#Acknowledgements
+# Acknowledgements
 This repository heavily reused codes from [SfmLearner-Pytorch](https://github.com/ClementPinard/SfmLearner-Pytorch)  by [Clement Pinard](https://github.com/ClementPinard). Many thanks to  [Clement Pinard](https://github.com/ClementPinard)'s work!
