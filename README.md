@@ -1,5 +1,5 @@
 # GeoNet_pytorch
-This is an unofficial pytorch implementation of the paper:
+This is an unofficial PyTorch implementation of the paper:
 
 GeoNet: Unsupervised Learning of Dense Depth, Optical Flow and Camera Pose (CVPR 2018)
 
